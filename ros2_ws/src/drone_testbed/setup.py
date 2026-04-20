@@ -25,6 +25,8 @@ setup(
             'drone_node = drone_testbed.drone_node:main',
             'algorithm_manager = drone_testbed.algorithm_manager:main',
             'sim_visualizer = drone_testbed.sim_visualizer:main',
+            'crazyflie_node = drone_testbed.crazyflie_node:main',
+            'mocap_state_node = drone_testbed.mocap_state_node:main',
         ],
     },
 )
