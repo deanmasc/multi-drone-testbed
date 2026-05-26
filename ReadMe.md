@@ -14,7 +14,7 @@ python3 run_sim.py --algo LeaderFollower
 
 ---
 
-## Hardware Setup (Ubuntu 22.04 Linux, one-time)
+## Hardware Setup (Ubuntu 24.04 Linux, one-time)
 
 ### 1. Clone the repo
 
