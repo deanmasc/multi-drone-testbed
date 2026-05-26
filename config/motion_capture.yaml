@@ -1,0 +1,11 @@
+# VICON motion capture configuration for Crazyswarm2 / motion_capture_tracking
+# Edit the hostname to match your VICON PC's IP address on the lab LAN
+
+motion_capture_tracking:
+  ros__parameters:
+    type: vicon
+    hostname: 192.168.1.100   # <-- CHANGE THIS to the VICON PC's IP address
+    # Additional VICON settings (leave as defaults unless told otherwise)
+    version: 1
+    enable_labeled_marker_publish: false
+    enable_unlabeled_marker_publish: false

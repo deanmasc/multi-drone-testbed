@@ -1,0 +1,22 @@
+# Crazyswarm2 drone configuration
+# Edit before running hardware tests:
+#   - uri: find with `python3 -m cflib.scan` while Crazyradio is plugged in
+#   - name (under motion_capture): must match the body name in VICON Tracker
+
+robots:
+  cf1:
+    enabled: true
+    uri: radio://0/80/2M/E7E7E7E7E7   # <-- CHANGE THIS (run: python3 -m cflib.scan)
+    initial_position: [0.0, 0.0, 0.0]
+    type: cf21
+
+robot_types:
+  cf21:
+    motion_capture:
+      enabled: true
+      name: cf1   # <-- CHANGE THIS to the VICON body name (e.g. "CF1" or "drone1")
+    firmware_params:
+      ring:
+        effect: 6
+
+# All other drones disabled until needed

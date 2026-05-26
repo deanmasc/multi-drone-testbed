@@ -23,3 +23,6 @@ Thumbs.db
 
 # Environment
 .env
+
+# Crazyflie radio cache
+cache/
