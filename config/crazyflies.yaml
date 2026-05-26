@@ -6,7 +6,7 @@
 robots:
   cf1:
     enabled: true
-    uri: radio://0/80/2M/E7E7E7E7E7   # <-- CHANGE THIS (run: python3 -m cflib.scan)
+    uri: radio://0/90/1M
     initial_position: [0.0, 0.0, 0.0]
     type: cf21
 

@@ -4,7 +4,7 @@
 motion_capture_tracking:
   ros__parameters:
     type: vicon
-    hostname: 192.168.1.100   # <-- CHANGE THIS to the VICON PC's IP address
+    hostname: 192.168.11.3
     # Additional VICON settings (leave as defaults unless told otherwise)
     version: 1
     enable_labeled_marker_publish: false
