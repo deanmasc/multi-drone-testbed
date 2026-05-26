@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Setup script for multi-drone testbed on Ubuntu 26.04 (ROS2 Rolling + Crazyswarm2)
+# Setup script for multi-drone testbed on Ubuntu 24.04 (ROS2 Jazzy + Crazyswarm2)
 # Run once after cloning the repo: bash setup.sh
 
 set -e
@@ -16,22 +16,22 @@ if ! command -v ros2 &>/dev/null; then
 http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" \
         | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
     sudo apt update
-    sudo apt install -y ros-rolling-ros-base ros-rolling-rviz2 \
+    sudo apt install -y ros-jazzy-ros-base ros-jazzy-rviz2 \
         python3-colcon-common-extensions python3-rosdep python3-pip
     sudo rosdep init || true
     rosdep update
-    echo "source /opt/ros/rolling/setup.bash" >> ~/.bashrc
-    source /opt/ros/rolling/setup.bash
+    echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
+    source /opt/ros/jazzy/setup.bash
 else
     echo "[1/5] ROS2 already installed, skipping."
-    source /opt/ros/rolling/setup.bash
+    source /opt/ros/jazzy/setup.bash
 fi
 
 # ── 2. Crazyswarm2 via apt ────────────────────────────────────────────────────
 echo "[2/5] Installing Crazyswarm2 (apt)..."
-sudo apt install -y ros-rolling-crazyflie
+sudo apt install -y ros-jazzy-crazyflie
 pip3 install cflib nicegui
-echo "source /opt/ros/rolling/setup.bash" >> ~/.bashrc
+echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
 
 # ── 3. Crazyradio USB permissions ─────────────────────────────────────────────
 echo "[3/5] Setting up Crazyradio USB permissions..."

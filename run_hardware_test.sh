@@ -7,11 +7,11 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Source ROS2 and workspaces
-source /opt/ros/rolling/setup.bash
+source /opt/ros/jazzy/setup.bash
 source "$SCRIPT_DIR/ros2_ws/install/setup.bash" 2>/dev/null || true
 
 # Copy our drone config into the Crazyswarm2 package location
-CRAZYSW_CONFIG="/opt/ros/rolling/share/crazyflie/config"
+CRAZYSW_CONFIG="/opt/ros/jazzy/share/crazyflie/config"
 if [ -d "$CRAZYSW_CONFIG" ]; then
     echo "Copying drone config to Crazyswarm2..."
     sudo cp "$SCRIPT_DIR/config/crazyflies.yaml" "$CRAZYSW_CONFIG/crazyflies.yaml"
