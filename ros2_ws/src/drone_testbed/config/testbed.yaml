@@ -32,15 +32,9 @@ drones:
 
 # Select which algorithm to run and its parameters
 algorithm:
-  name: "LeaderFollower"
+  name: "Trochoidal"
   params:
-    leader_id: "drone1"
-    leader_speed: 0.3       # rad/s - angular speed on circular path
-    leader_radius: 0.8      # m - radius of leader's circle
-    gain_kp: 1.5
-    gain_kd: 0.8
-    formation_offsets:
-      drone2: [0.6, 0.0]
-      drone3: [0.0, 0.6]
-      drone4: [-0.6, 0.0]
-      drone5: [0.0, -0.6]
+    orbit_radius: 0.8
+    orbit_speed: 0.3
+    epicycle_radius: 0.2
+    epicycle_speed: 1.5

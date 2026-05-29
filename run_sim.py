@@ -117,19 +117,19 @@ def run(algo_name_override=None):
 
     # ── Matplotlib setup ───────────────────────────────────────────────────────
     fig, ax = plt.subplots(figsize=(8, 8))
-    fig.patch.set_facecolor('#1a1a2e')
-    ax.set_facecolor('#16213e')
+    fig.patch.set_facecolor('white')
+    ax.set_facecolor('white')
 
     ax.set_xlim(-bounds - 0.3, bounds + 0.3)
     ax.set_ylim(-bounds - 0.3, bounds + 0.3)
     ax.set_aspect('equal')
-    ax.grid(True, alpha=0.2, color='white')
-    ax.set_xlabel('X (m)', color='white')
-    ax.set_ylabel('Y (m)', color='white')
-    ax.tick_params(colors='white')
+    ax.grid(True, alpha=0.3, color='gray')
+    ax.set_xlabel('X (m)')
+    ax.set_ylabel('Y (m)')
+    ax.tick_params(colors='black')
 
     arena = Circle((0, 0), bounds, fill=False, linestyle='--',
-                   color='#4a90d9', linewidth=2, alpha=0.6)
+                   color='gray', linewidth=2, alpha=0.6)
     ax.add_patch(arena)
 
     plt.tight_layout()
@@ -172,17 +172,17 @@ def run(algo_name_override=None):
             # Redraw at ~20Hz
             if step_count % max(1, round(0.05 / dt)) == 0:
                 ax.cla()
-                ax.set_facecolor('#16213e')
+                ax.set_facecolor('white')
                 ax.set_xlim(-bounds - 0.3, bounds + 0.3)
                 ax.set_ylim(-bounds - 0.3, bounds + 0.3)
                 ax.set_aspect('equal')
-                ax.grid(True, alpha=0.2, color='white')
-                ax.set_xlabel('X (m)', color='white')
-                ax.set_ylabel('Y (m)', color='white')
-                ax.tick_params(colors='white')
+                ax.grid(True, alpha=0.3, color='gray')
+                ax.set_xlabel('X (m)')
+                ax.set_ylabel('Y (m)')
+                ax.tick_params(colors='black')
 
                 arena = Circle((0, 0), bounds, fill=False, linestyle='--',
-                               color='#4a90d9', linewidth=2, alpha=0.6)
+                               color='gray', linewidth=2, alpha=0.6)
                 ax.add_patch(arena)
 
                 for i, (drone_id, drone) in enumerate(drones.items()):
@@ -203,14 +203,14 @@ def run(algo_name_override=None):
 
                     # Drone marker
                     ax.plot(pos[0], pos[1], 'o', color=color,
-                            markersize=14, markeredgecolor='white',
+                            markersize=14, markeredgecolor='black',
                             markeredgewidth=1.5, zorder=5)
 
                     # ID label
                     ax.annotate(
                         drone_id, (pos[0], pos[1]),
                         textcoords='offset points', xytext=(12, 8),
-                        fontsize=9, color=color, fontweight='bold',
+                        fontsize=14, color=color, fontweight='bold',
                     )
 
                     # Velocity arrow
@@ -225,7 +225,7 @@ def run(algo_name_override=None):
 
                 ax.set_title(
                     f'Algorithm: {algo_name}   |   t = {sim_time:.1f}s',
-                    color='white', fontsize=13, pad=10,
+                    color='black', fontsize=13, pad=10,
                 )
                 fig.canvas.draw()
                 fig.canvas.flush_events()

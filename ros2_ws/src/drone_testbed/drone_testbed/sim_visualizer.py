@@ -69,6 +69,7 @@ class SimVisualizerNode(Node):
 
         # Set up matplotlib figure
         self._fig, self._ax = plt.subplots(1, 1, figsize=(8, 8))
+        self._fig.patch.set_facecolor('white')
         self._setup_plot()
 
         # Update timer (~3Hz via ROS, but actual plot update uses matplotlib timer)
@@ -97,6 +98,7 @@ class SimVisualizerNode(Node):
         ax.set_xlim(-b - 0.5, b + 0.5)
         ax.set_ylim(-b - 0.5, b + 0.5)
         ax.set_aspect('equal')
+        ax.set_facecolor('white')
         ax.grid(True, alpha=0.3)
         ax.set_xlabel('X (m)')
         ax.set_ylabel('Y (m)')
@@ -144,7 +146,7 @@ class SimVisualizerNode(Node):
             ax.annotate(
                 drone_id, (pos[0], pos[1]),
                 textcoords='offset points', xytext=(10, 10),
-                fontsize=9, color=color, fontweight='bold',
+                fontsize=14, color=color, fontweight='bold',
             )
 
             # Draw velocity arrow
