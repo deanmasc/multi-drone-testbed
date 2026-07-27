@@ -1,37 +1,55 @@
 #!/usr/bin/env bash
-# Setup script for multi-drone testbed on Ubuntu 24.04 (ROS2 Jazzy + Crazyswarm2)
+# Setup script for multi-drone testbed (ROS2 + Crazyswarm2)
+# Supports Ubuntu 24.04 (noble -> ROS2 Jazzy) and Ubuntu 22.04 (jammy -> ROS2 Humble)
 # Run once after cloning the repo: bash setup.sh
 
 set -e
 echo "=== Multi-Drone Testbed Setup ==="
 
-# ── 1. ROS2 Jazzy ─────────────────────────────────────────────────────────────
+# ── 0. Pick ROS2 distro based on Ubuntu version ───────────────────────────────
+UBUNTU_CODENAME="$(. /etc/os-release && echo $UBUNTU_CODENAME)"
+case "$UBUNTU_CODENAME" in
+    noble)
+        ROS_DISTRO_NAME="jazzy"
+        ;;
+    jammy)
+        ROS_DISTRO_NAME="humble"
+        ;;
+    *)
+        echo "ERROR: Unsupported Ubuntu release '$UBUNTU_CODENAME'."
+        echo "This project supports Ubuntu 22.04 (jammy, ROS2 Humble) or Ubuntu 24.04 (noble, ROS2 Jazzy)."
+        exit 1
+        ;;
+esac
+echo "Detected Ubuntu '$UBUNTU_CODENAME' -> using ROS2 $ROS_DISTRO_NAME"
+
+# ── 1. ROS2 ────────────────────────────────────────────────────────────────────
 if ! command -v ros2 &>/dev/null; then
-    echo "[1/5] Installing ROS2 Jazzy..."
+    echo "[1/5] Installing ROS2 ${ROS_DISTRO_NAME}..."
     sudo apt update && sudo apt install -y software-properties-common curl
     sudo add-apt-repository universe -y
     sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
         -o /usr/share/keyrings/ros-archive-keyring.gpg
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
-http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" \
+http://packages.ros.org/ros2/ubuntu $UBUNTU_CODENAME main" \
         | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
     sudo apt update
-    sudo apt install -y ros-jazzy-ros-base ros-jazzy-rviz2 \
+    sudo apt install -y "ros-${ROS_DISTRO_NAME}-ros-base" "ros-${ROS_DISTRO_NAME}-rviz2" \
         python3-colcon-common-extensions python3-rosdep python3-pip
     sudo rosdep init || true
     rosdep update
-    echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
-    source /opt/ros/jazzy/setup.bash
+    echo "source /opt/ros/${ROS_DISTRO_NAME}/setup.bash" >> ~/.bashrc
+    source /opt/ros/${ROS_DISTRO_NAME}/setup.bash
 else
     echo "[1/5] ROS2 already installed, skipping."
-    source /opt/ros/jazzy/setup.bash
+    source /opt/ros/${ROS_DISTRO_NAME}/setup.bash
 fi
 
 # ── 2. Crazyswarm2 via apt ────────────────────────────────────────────────────
 echo "[2/5] Installing Crazyswarm2 (apt)..."
-sudo apt install -y ros-jazzy-crazyflie
+sudo apt install -y "ros-${ROS_DISTRO_NAME}-crazyflie"
 pip3 install cflib nicegui
-echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
+echo "source /opt/ros/${ROS_DISTRO_NAME}/setup.bash" >> ~/.bashrc
 
 # ── 3. Crazyradio USB permissions ─────────────────────────────────────────────
 echo "[3/5] Setting up Crazyradio USB permissions..."

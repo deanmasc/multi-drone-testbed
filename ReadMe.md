@@ -162,7 +162,7 @@ The simulation window shows:
 
 ---
 
-## Hardware Setup (Ubuntu 24.04, one-time)
+## Hardware Setup (Ubuntu 22.04 or 24.04, one-time)
 
 ### 1. Clone the repo
 
@@ -177,7 +177,7 @@ cd multi-drone-testbed
 bash setup.sh
 ```
 
-Installs ROS2 Jazzy, Crazyswarm2 (via apt), builds the `drone_testbed` package, and sets up Crazyradio USB permissions. Takes approximately 10–15 minutes.
+Auto-detects your Ubuntu version and installs the matching ROS2 distro (Jazzy on 24.04/noble, Humble on 22.04/jammy), Crazyswarm2 (via apt), builds the `drone_testbed` package, and sets up Crazyradio USB permissions. Takes approximately 10–15 minutes.
 
 After setup completes, **reboot** to apply USB group permissions.
 
@@ -262,7 +262,7 @@ The VICON PC requires no software changes if it is already running VICON Tracker
 multi-drone-testbed/
 ├── run_sim.py                         # Standalone simulation (no ROS2 needed)
 ├── run_hardware_test.sh               # One-drone hardware flight test
-├── setup.sh                           # Ubuntu 24.04 one-time setup script
+├── setup.sh                           # Ubuntu 22.04/24.04 one-time setup script
 ├── config/
 │   ├── crazyflies.yaml                # Drone radio URI + VICON body name
 │   └── motion_capture.yaml            # VICON PC IP address
@@ -303,7 +303,7 @@ multi-drone-testbed/
 | NumPy | Physics / linear algebra | `pip3 install numpy` |
 | Matplotlib | Simulation visualisation | `pip3 install matplotlib` |
 | PyYAML | Config loading | `pip3 install pyyaml` |
-| ROS2 Jazzy | Hardware middleware | `setup.sh` |
+| ROS2 Jazzy/Humble | Hardware middleware | `setup.sh` |
 | Crazyswarm2 | Crazyflie ROS2 interface | `setup.sh` |
 | cflib | Direct Crazyflie comms | `pip3 install cflib` |
 | VICON Tracker | Motion capture (lab only) | Lab installation |

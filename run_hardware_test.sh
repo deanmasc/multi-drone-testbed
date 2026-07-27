@@ -6,12 +6,22 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# Detect installed ROS2 distro (jazzy on Ubuntu 24.04, humble on Ubuntu 22.04)
+if [ -d /opt/ros/jazzy ]; then
+    ROS_DISTRO_NAME="jazzy"
+elif [ -d /opt/ros/humble ]; then
+    ROS_DISTRO_NAME="humble"
+else
+    echo "ERROR: No supported ROS2 install found in /opt/ros. Run setup.sh first."
+    exit 1
+fi
+
 # Source ROS2 and workspaces
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/${ROS_DISTRO_NAME}/setup.bash
 source "$SCRIPT_DIR/ros2_ws/install/setup.bash" 2>/dev/null || true
 
 # Copy our drone config into the Crazyswarm2 package location
-CRAZYSW_CONFIG="/opt/ros/jazzy/share/crazyflie/config"
+CRAZYSW_CONFIG="/opt/ros/${ROS_DISTRO_NAME}/share/crazyflie/config"
 if [ -d "$CRAZYSW_CONFIG" ]; then
     echo "Copying drone config to Crazyswarm2..."
     sudo cp "$SCRIPT_DIR/config/crazyflies.yaml" "$CRAZYSW_CONFIG/crazyflies.yaml"
