@@ -14,7 +14,7 @@ robot_types:
   cf21:
     motion_capture:
       enabled: true
-      name: cf1   # <-- CHANGE THIS to the VICON body name (e.g. "CF1" or "drone1")
+      name: drone_4   # <-- must match the VICON body name exactly (case-sensitive)
     firmware_params:
       ring:
         effect: 6
