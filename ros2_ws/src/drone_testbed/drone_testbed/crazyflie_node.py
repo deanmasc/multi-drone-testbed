@@ -157,8 +157,6 @@ class CrazyflieNode(Node):
 
 
 def main(args=None):
-    rclpy.init(args=args)
-
     swarm = Crazyswarm()
 
     node = CrazyflieNode(swarm)
