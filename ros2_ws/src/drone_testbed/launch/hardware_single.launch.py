@@ -23,7 +23,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('drone_id', default_value='drone1'),
-        DeclareLaunchArgument('cf_name', default_value='/drone_4'),
+        DeclareLaunchArgument('cf_name', default_value='drone_4'),
         DeclareLaunchArgument('mocap_name', default_value='drone_4'),
         DeclareLaunchArgument(
             'config',
