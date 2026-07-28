@@ -47,7 +47,7 @@ fi
 
 # ── 2. Crazyswarm2 via apt ────────────────────────────────────────────────────
 echo "[2/5] Installing Crazyswarm2 (apt)..."
-sudo apt install -y "ros-${ROS_DISTRO_NAME}-crazyflie" "ros-${ROS_DISTRO_NAME}-motion-capture-tracking"
+sudo apt install -y "ros-${ROS_DISTRO_NAME}-crazyflie" "ros-${ROS_DISTRO_NAME}-motion-capture-tracking" "ros-${ROS_DISTRO_NAME}-joy"
 pip3 install cflib nicegui
 echo "source /opt/ros/${ROS_DISTRO_NAME}/setup.bash" >> ~/.bashrc
 
