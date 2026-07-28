@@ -12,6 +12,7 @@ Topics:
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from std_msgs.msg import Float64MultiArray
 
 from motion_capture_tracking_interfaces.msg import NamedPoseArray
@@ -43,7 +44,7 @@ class MocapStateNode(Node):
             NamedPoseArray,
             '/poses',
             self._poses_callback,
-            10,
+            qos_profile_sensor_data,
         )
 
         self.get_logger().info(
