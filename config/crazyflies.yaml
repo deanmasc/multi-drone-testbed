@@ -1,27 +1,54 @@
-# Crazyswarm2 drone configuration
+# Crazyswarm2 drone configuration (fileversion 3 schema)
 # Edit before running hardware tests:
-#   - uri: find with `python3 -c "import cflib.crtp; cflib.crtp.init_drivers(); print(cflib.crtp.scan_interfaces())"`
-#     while the Crazyradio is plugged in
-#   - The top-level key under `robots:` (e.g. "drone_4") MUST match the
-#     rigid body name registered in VICON Tracker exactly (case-sensitive).
-#     Crazyswarm2's launch.py uses this key -- not a separate "name" field --
-#     to look up the body in the motion capture stream.
+#   - uri: find channel/datarate with
+#     `python3 -c "import cflib.crtp; cflib.crtp.init_drivers(); print(cflib.crtp.scan_interfaces())"`
+#     then append the drone's radio address -- E7E7E7E7E7 is the Bitcraze factory
+#     default; crazyflie_cpp requires the full 4-part radio://<id>/<channel>/<datarate>/<address>
+#     form, unlike cflib's scan output which omits the address for the default case.
+#   - The top-level key under `robots:` (e.g. "drone_4") MUST match the rigid
+#     body name registered in VICON Tracker exactly (case-sensitive).
+
+fileversion: 3
 
 robots:
   drone_4:
     enabled: true
-    uri: radio://0/90/1M
+    uri: radio://0/90/1M/E7E7E7E7E7
     initial_position: [0.0, 0.0, 0.0]
     type: cf21
 
 robot_types:
   cf21:
     motion_capture:
-      enabled: true
-      marker: default      # key into motion_capture.yaml's marker_configurations
-      dynamics: default    # key into motion_capture.yaml's dynamics_configurations
-    firmware_params:
-      ring:
-        effect: 6
+      # "vendor": VICON Tracker already computes the rigid body pose itself,
+      # so we just relay its named poses -- no on-board marker-cloud fitting.
+      tracking: "vendor"
+      marker: default
+      dynamics: default
+    big_quad: false
+    battery:
+      voltage_warning: 3.8   # V
+      voltage_critical: 3.7  # V
 
-# All other drones disabled until needed
+# global settings for all robots
+all:
+  firmware_logging:
+    enabled: true
+    default_topics:
+      pose:
+        frequency: 10 # Hz
+      status:
+        frequency: 1 # Hz
+  firmware_params:
+    commander:
+      enHighLevel: 1
+    stabilizer:
+      estimator: 2  # 1: complementary, 2: kalman
+      controller: 2 # 1: PID, 2: mellinger
+    locSrv:
+      extPosStdDev: 1e-3
+      extQuatStdDev: 0.5e-1
+  reference_frame: "world"
+  broadcasts:
+    num_repeats: 15
+    delay_between_repeats_ms: 1
