@@ -1,10 +1,14 @@
 # Crazyswarm2 drone configuration
 # Edit before running hardware tests:
-#   - uri: find with `python3 -m cflib.scan` while Crazyradio is plugged in
-#   - name (under motion_capture): must match the body name in VICON Tracker
+#   - uri: find with `python3 -c "import cflib.crtp; cflib.crtp.init_drivers(); print(cflib.crtp.scan_interfaces())"`
+#     while the Crazyradio is plugged in
+#   - The top-level key under `robots:` (e.g. "drone_4") MUST match the
+#     rigid body name registered in VICON Tracker exactly (case-sensitive).
+#     Crazyswarm2's launch.py uses this key -- not a separate "name" field --
+#     to look up the body in the motion capture stream.
 
 robots:
-  cf1:
+  drone_4:
     enabled: true
     uri: radio://0/90/1M
     initial_position: [0.0, 0.0, 0.0]
@@ -14,7 +18,8 @@ robot_types:
   cf21:
     motion_capture:
       enabled: true
-      name: drone_4   # <-- must match the VICON body name exactly (case-sensitive)
+      marker: default      # key into motion_capture.yaml's marker_configurations
+      dynamics: default    # key into motion_capture.yaml's dynamics_configurations
     firmware_params:
       ring:
         effect: 6
