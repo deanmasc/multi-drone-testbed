@@ -47,7 +47,7 @@ class CrazyflieNode(Node):
         self._max_acc = self.get_parameter('max_acceleration').value
 
         # Get the specific Crazyflie object from swarm
-        self._cf = swarm.allcfs.crazyflies_by_name[cf_name]
+        self._cf = swarm.allcfs.crazyfliesByName[cf_name]
         self._time_helper = swarm.timeHelper
 
         # Desired state (integrated from acceleration commands)
