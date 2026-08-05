@@ -17,10 +17,15 @@ Usage:
   ros2 launch drone_testbed hardware_single.launch.py
 """
 
+import math
+
 import numpy as np
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from std_msgs.msg import Float64MultiArray, Int32
+
+from motion_capture_tracking_interfaces.msg import NamedPoseArray
 
 from crazyflie_py import Crazyswarm
 
@@ -43,6 +48,7 @@ class CrazyflieNode(Node):
 
         self._drone_id = self.get_parameter('drone_id').value
         cf_name = self.get_parameter('cf_name').value
+        self._cf_name = cf_name
         self._max_vel = self.get_parameter('max_velocity').value
         self._max_acc = self.get_parameter('max_acceleration').value
 
@@ -58,6 +64,21 @@ class CrazyflieNode(Node):
         # Real position from mocap (used to initialise desired_pos)
         self._real_pos = None
         self._running = False
+
+        # Low-level setpoint streaming state. Streaming cmdFullState preempts
+        # the onboard high-level commander, so we stay on high-level hover
+        # until the algorithm first commands motion, and we must hand control
+        # back (notifySetpointsStop) before any takeoff/land call can work.
+        self._streaming = False
+        self._mocap_yaw = 0.0   # latest yaw from mocap; streamed as yaw-hold
+        self._yaw_hold = 0.0
+
+        self.create_subscription(
+            NamedPoseArray,
+            '/poses',
+            self._poses_callback,
+            qos_profile_sensor_data,
+        )
 
         # Subscribers
         self.create_subscription(
@@ -95,22 +116,63 @@ class CrazyflieNode(Node):
         if len(msg.data) >= 2:
             self._real_pos = np.array([msg.data[0], msg.data[1], TAKEOFF_HEIGHT])
 
+    def _poses_callback(self, msg: NamedPoseArray):
+        for named_pose in msg.poses:
+            if named_pose.name != self._cf_name:
+                continue
+            q = named_pose.pose.orientation
+            self._mocap_yaw = math.atan2(
+                2.0 * (q.w * q.z + q.x * q.y),
+                1.0 - 2.0 * (q.y * q.y + q.z * q.z),
+            )
+            return
+
     def _control_callback(self, msg: Int32):
         if msg.data == 0:
             self._running = False
             self._cmd_accel = np.zeros(2)
+            self._stop_streaming()
         elif msg.data == 1:
             self._running = True
-            # Seed desired pos from real mocap position
-            if self._real_pos is not None:
-                self._desired_pos = self._real_pos.copy()
         elif msg.data == 2:
             self._running = False
             self._cmd_accel = np.zeros(2)
+            self._stop_streaming()
+
+    def _stop_streaming(self):
+        """Hand control back to the onboard high-level commander."""
+        if not self._streaming:
+            return
+        self._streaming = False
+        self._cf.notifySetpointsStop()
+        # Brief takeoff re-engages the high-level hover at the current height
+        # (same trick as the reference pursuit-evasion implementation).
+        self._cf.takeoff(targetHeight=TAKEOFF_HEIGHT, duration=0.5)
+        self.get_logger().info('Streaming stopped, back on high-level hover')
 
     def _control_loop(self):
         if not self._running:
             return
+
+        # Stay on the onboard high-level hover until the algorithm actually
+        # commands motion. Once cmdFullState streaming starts it preempts the
+        # high-level commander and must be continuous, so we only engage on
+        # the first nonzero acceleration -- and seed the setpoint from the
+        # drone's real position and yaw to avoid a jump at engagement.
+        if not self._streaming:
+            if not np.any(self._cmd_accel):
+                return
+            if self._real_pos is None:
+                return  # don't engage until mocap tells us where the drone is
+            self._desired_pos = self._real_pos.copy()
+            self._desired_pos[2] = TAKEOFF_HEIGHT
+            self._desired_vel = np.zeros(3)
+            self._yaw_hold = self._mocap_yaw
+            self._streaming = True
+            self.get_logger().info(
+                f'Engaging setpoint streaming at {self._desired_pos.round(3)}, '
+                f'yaw-hold {math.degrees(self._yaw_hold):.0f} deg'
+            )
 
         dt = 1.0 / CONTROL_RATE
 
@@ -128,12 +190,14 @@ class CrazyflieNode(Node):
         # Keep z fixed at takeoff height
         self._desired_pos[2] = TAKEOFF_HEIGHT
 
-        # Send full state command to Crazyflie
+        # Send full state command to Crazyflie. Yaw holds the value measured
+        # at engagement -- never command yaw 0 blindly; if the mocap frame has
+        # the drone at a nonzero yaw this causes a violent snap-turn.
         self._cf.cmdFullState(
             pos=self._desired_pos,
             vel=self._desired_vel,
             acc=acc3,
-            yaw=0.0,
+            yaw=self._yaw_hold,
             omega=np.zeros(3),
         )
 
@@ -151,6 +215,11 @@ class CrazyflieNode(Node):
     def land(self):
         self.get_logger().info('Landing...')
         self._running = False
+        # If we were streaming setpoints, the high-level commander is
+        # preempted and would silently ignore land() -- hand control back first.
+        if self._streaming:
+            self._streaming = False
+            self._cf.notifySetpointsStop()
         self._cf.land(targetHeight=0.05, duration=LAND_DURATION)
         self._time_helper.sleep(LAND_DURATION + 0.5)
         self.get_logger().info('Landed')

@@ -124,10 +124,12 @@ class AlgorithmManagerNode(Node):
     def _auto_start(self):
         if not self._started:
             self._started = True
-            msg = Int32()
-            msg.data = 1  # start
-            self._control_pub.publish(msg)
             self.get_logger().info('Simulation started')
+        # Republish start every timer tick: crazyflie_node blocks in its
+        # takeoff sleep at startup and can miss a one-shot start message.
+        msg = Int32()
+        msg.data = 1  # start
+        self._control_pub.publish(msg)
 
     def _set_algorithm_callback(self, msg: String):
         algo_name = msg.data.strip()
