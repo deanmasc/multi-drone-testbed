@@ -45,12 +45,15 @@ class CrazyflieNode(Node):
         self.declare_parameter('cf_name', '/cf1')   # Crazyswarm robot name
         self.declare_parameter('max_velocity', 0.7)
         self.declare_parameter('max_acceleration', 0.5)
+        # Seconds to fly after takeoff before landing. 0 = until Ctrl+C.
+        self.declare_parameter('flight_duration', 0.0)
 
         self._drone_id = self.get_parameter('drone_id').value
         cf_name = self.get_parameter('cf_name').value
         self._cf_name = cf_name
         self._max_vel = self.get_parameter('max_velocity').value
         self._max_acc = self.get_parameter('max_acceleration').value
+        self._flight_duration = self.get_parameter('flight_duration').value
 
         # Get the specific Crazyflie object from swarm
         self._cf = swarm.allcfs.crazyfliesByName[cf_name]
@@ -212,6 +215,18 @@ class CrazyflieNode(Node):
         self._desired_pos[2] = TAKEOFF_HEIGHT
         self.get_logger().info('Takeoff complete')
 
+    def fly(self):
+        """Spin until the flight duration elapses (0 = until interrupted)."""
+        if self._flight_duration <= 0.0:
+            self.get_logger().info('Flying until Ctrl+C...')
+            rclpy.spin(self)
+            return
+
+        self.get_logger().info(f'Flying for {self._flight_duration:.1f}s...')
+        end = self._time_helper.time() + self._flight_duration
+        while rclpy.ok() and self._time_helper.time() < end:
+            rclpy.spin_once(self, timeout_sec=0.05)
+
     def land(self):
         self.get_logger().info('Landing...')
         self._running = False
@@ -232,7 +247,7 @@ def main(args=None):
 
     try:
         node.takeoff()
-        rclpy.spin(node)
+        node.fly()
     except KeyboardInterrupt:
         pass
     finally:

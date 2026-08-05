@@ -18,6 +18,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -29,6 +30,8 @@ def generate_launch_description():
             'config',
             default_value='config/testbed.yaml',
         ),
+        # Seconds to fly after takeoff before auto-landing. 0 = until Ctrl+C.
+        DeclareLaunchArgument('flight_duration', default_value='0.0'),
 
         # Converts VICON /poses → /drone1/state
         Node(
@@ -50,6 +53,9 @@ def generate_launch_description():
             parameters=[{
                 'drone_id': LaunchConfiguration('drone_id'),
                 'cf_name': LaunchConfiguration('cf_name'),
+                'flight_duration': ParameterValue(
+                    LaunchConfiguration('flight_duration'), value_type=float,
+                ),
             }],
             output='screen',
         ),
