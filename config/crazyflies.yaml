@@ -46,11 +46,12 @@ all:
       estimator: 2  # 1: complementary, 2: kalman
       controller: 2 # 1: PID, 2: mellinger
     locSrv:
-      # Loosened from the stock defaults (1e-3 / 0.5e-1) while VICON calibration
-      # is still above threshold -- trusts each sample less, damping noise-driven
-      # control corrections at the cost of less tight tracking.
-      extPosStdDev: 1e-2
-      extQuatStdDev: 0.1
+      # Stock Crazyswarm2 defaults. Do not loosen these to "damp noise" -- a
+      # larger stddev makes the onboard Kalman filter trust VICON less and lean
+      # on IMU integration, so the z estimate drifts and the controller cuts
+      # thrust before actually reaching the target height.
+      extPosStdDev: 1e-3
+      extQuatStdDev: 0.5e-1
   reference_frame: "world"
   broadcasts:
     num_repeats: 15
