@@ -205,6 +205,15 @@ class CrazyflieNode(Node):
         )
 
     def takeoff(self):
+        # Hand control back to the high-level commander before we ask for
+        # takeoff. If an earlier run died mid-stream (Ctrl+C, crash, unhandled
+        # exception) the firmware is still in low-level setpoint mode and will
+        # silently ignore takeoff() until the drone is power-cycled. Nothing in
+        # this process can leave it that way when the algorithm never commands
+        # motion, but a previous run that did stream will contaminate every
+        # later run, so clear it unconditionally at startup.
+        self._cf.notifySetpointsStop()
+
         self.get_logger().info(f'Taking off to {TAKEOFF_HEIGHT}m...')
         self._cf.takeoff(targetHeight=TAKEOFF_HEIGHT, duration=TAKEOFF_DURATION)
         self._time_helper.sleep(TAKEOFF_DURATION + 0.5)
