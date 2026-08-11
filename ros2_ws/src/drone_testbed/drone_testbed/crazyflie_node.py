@@ -47,6 +47,12 @@ class CrazyflieNode(Node):
         self.declare_parameter('max_acceleration', 0.5)
         # Seconds to fly after takeoff before landing. 0 = until Ctrl+C.
         self.declare_parameter('flight_duration', 0.0)
+        # Must track the `tracking` mode in crazyflies.yaml. True for "vendor"
+        # tracking of a multi-marker rigid body, where mocap orientation is real
+        # and the firmware already knows its true heading -- hold the measured
+        # yaw. False for single-marker/position-only setups, where the /poses
+        # quaternion is a placeholder and the drone's own estimate starts at 0.
+        self.declare_parameter('use_mocap_yaw', True)
 
         self._drone_id = self.get_parameter('drone_id').value
         cf_name = self.get_parameter('cf_name').value
@@ -54,6 +60,7 @@ class CrazyflieNode(Node):
         self._max_vel = self.get_parameter('max_velocity').value
         self._max_acc = self.get_parameter('max_acceleration').value
         self._flight_duration = self.get_parameter('flight_duration').value
+        self._use_mocap_yaw = self.get_parameter('use_mocap_yaw').value
 
         # Get the specific Crazyflie object from swarm
         self._cf = swarm.allcfs.crazyfliesByName[cf_name]
@@ -120,6 +127,8 @@ class CrazyflieNode(Node):
             self._real_pos = np.array([msg.data[0], msg.data[1], TAKEOFF_HEIGHT])
 
     def _poses_callback(self, msg: NamedPoseArray):
+        if not self._use_mocap_yaw:
+            return  # single-marker tracking: no real orientation to read
         for named_pose in msg.poses:
             if named_pose.name != self._cf_name:
                 continue
@@ -193,9 +202,10 @@ class CrazyflieNode(Node):
         # Keep z fixed at takeoff height
         self._desired_pos[2] = TAKEOFF_HEIGHT
 
-        # Send full state command to Crazyflie. Yaw holds the value measured
-        # at engagement -- never command yaw 0 blindly; if the mocap frame has
-        # the drone at a nonzero yaw this causes a violent snap-turn.
+        # Send full state command to Crazyflie. Yaw holds the value captured at
+        # engagement: the measured mocap yaw when orientation is real, otherwise
+        # 0 to match the drone's own gyro-initialised estimate. Never mix the
+        # two -- commanding 0 while mocap reports a nonzero yaw snap-turns it.
         self._cf.cmdFullState(
             pos=self._desired_pos,
             vel=self._desired_vel,

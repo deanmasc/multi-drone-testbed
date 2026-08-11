@@ -24,14 +24,18 @@ from launch_ros.parameter_descriptions import ParameterValue
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('drone_id', default_value='drone1'),
-        DeclareLaunchArgument('cf_name', default_value='drone_4'),
-        DeclareLaunchArgument('mocap_name', default_value='drone_4'),
+        DeclareLaunchArgument('cf_name', default_value='drone_1'),
+        DeclareLaunchArgument('mocap_name', default_value='drone_1'),
         DeclareLaunchArgument(
             'config',
             default_value='config/testbed.yaml',
         ),
         # Seconds to fly after takeoff before auto-landing. 0 = until Ctrl+C.
         DeclareLaunchArgument('flight_duration', default_value='0.0'),
+        # True for a multi-marker rigid body under "vendor" tracking, where
+        # mocap orientation is real. Set false for single-marker/position-only
+        # tracking, which has no orientation to read.
+        DeclareLaunchArgument('use_mocap_yaw', default_value='true'),
 
         # Converts VICON /poses → /drone1/state
         Node(
@@ -55,6 +59,9 @@ def generate_launch_description():
                 'cf_name': LaunchConfiguration('cf_name'),
                 'flight_duration': ParameterValue(
                     LaunchConfiguration('flight_duration'), value_type=float,
+                ),
+                'use_mocap_yaw': ParameterValue(
+                    LaunchConfiguration('use_mocap_yaw'), value_type=bool,
                 ),
             }],
             output='screen',

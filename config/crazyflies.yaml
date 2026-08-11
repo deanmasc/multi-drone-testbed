@@ -5,13 +5,16 @@
 #     then append the drone's radio address -- E7E7E7E7E7 is the Bitcraze factory
 #     default; crazyflie_cpp requires the full 4-part radio://<id>/<channel>/<datarate>/<address>
 #     form, unlike cflib's scan output which omits the address for the default case.
-#   - The top-level key under `robots:` (e.g. "drone_4") MUST match the rigid
-#     body name registered in VICON Tracker exactly (case-sensitive).
+#   - The top-level key under `robots:` (e.g. "drone_1") MUST match the rigid
+#     body name registered in VICON Tracker exactly (case-sensitive), and is
+#     what cf_name/mocap_name must be set to.
+#   - initial_position: informational under "vendor" tracking -- identification
+#     is by name, not proximity. Keep it roughly right anyway.
 
 fileversion: 3
 
 robots:
-  drone_4:
+  drone_1:
     enabled: true
     uri: radio://0/20/2M/E7E7E7E7E7
     initial_position: [0.0429, -0.0085, 0.0158]
@@ -20,8 +23,14 @@ robots:
 robot_types:
   cf21:
     motion_capture:
-      # "vendor": VICON Tracker already computes the rigid body pose itself,
-      # so we just relay its named poses -- no on-board marker-cloud fitting.
+      # Multi-marker rigid body (Tracker needs >=3 markers to define an object).
+      # "vendor": VICON Tracker computes the 6-DOF pose itself and we relay its
+      # named poses -- no marker-cloud fitting on the ROS side.
+      #
+      # Orientation is therefore REAL here, which couples to crazyflie_node's
+      # use_mocap_yaw parameter: it must be true, so we hold the measured yaw.
+      # Commanding yaw 0 while the firmware knows (from VICON) that it is at
+      # some other heading produces a violent snap-turn.
       tracking: "vendor"
       marker: default
       dynamics: default
