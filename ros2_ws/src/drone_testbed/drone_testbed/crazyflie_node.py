@@ -53,6 +53,11 @@ class CrazyflieNode(Node):
         # yaw. False for single-marker/position-only setups, where the /poses
         # quaternion is a placeholder and the drone's own estimate starts at 0.
         self.declare_parameter('use_mocap_yaw', True)
+        # Half-extent of the allowed x/y box around the world origin. The
+        # streamed setpoint is an open integral of algorithm output, so without
+        # this nothing stops it walking out of the capture volume -- and once
+        # the drone leaves tracking, position feedback is gone entirely.
+        self.declare_parameter('geofence', 1.5)
 
         self._drone_id = self.get_parameter('drone_id').value
         cf_name = self.get_parameter('cf_name').value
@@ -61,6 +66,7 @@ class CrazyflieNode(Node):
         self._max_acc = self.get_parameter('max_acceleration').value
         self._flight_duration = self.get_parameter('flight_duration').value
         self._use_mocap_yaw = self.get_parameter('use_mocap_yaw').value
+        self._geofence = self.get_parameter('geofence').value
 
         # Get the specific Crazyflie object from swarm
         self._cf = swarm.allcfs.crazyfliesByName[cf_name]
@@ -201,6 +207,20 @@ class CrazyflieNode(Node):
 
         # Keep z fixed at takeoff height
         self._desired_pos[2] = TAKEOFF_HEIGHT
+
+        # Geofence x/y. Zero the outward velocity component as well as clamping
+        # the position, otherwise the integrator keeps winding up against the
+        # limit and the drone lurches when it is finally free to move again.
+        for axis in (0, 1):
+            limit = math.copysign(self._geofence, self._desired_pos[axis])
+            if abs(self._desired_pos[axis]) > self._geofence:
+                self._desired_pos[axis] = limit
+                if self._desired_vel[axis] * limit > 0:
+                    self._desired_vel[axis] = 0.0
+                self.get_logger().warn(
+                    f'Geofence hit on {"xy"[axis]} at {self._geofence}m',
+                    throttle_duration_sec=1.0,
+                )
 
         # Send full state command to Crazyflie. Yaw holds the value captured at
         # engagement: the measured mocap yaw when orientation is real, otherwise
