@@ -26,3 +26,9 @@ algorithm:
     gain_kp: 1.0
     gain_kd: 0.6
     max_accel: 0.3     # m/s^2
+    # Flight log for judging path quality after the fact. Empty log_file puts a
+    # timestamped file in whatever directory you launched from, so runs never
+    # overwrite each other. log_interval cannot resolve finer than the control
+    # period above (0.1s at control_rate 10.0).
+    log_file: ""
+    log_interval: 0.1  # s
