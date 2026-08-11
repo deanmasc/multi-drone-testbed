@@ -13,7 +13,7 @@ fileversion: 3
 robots:
   drone_4:
     enabled: true
-    uri: radio://0/90/1M/E7E7E7E7E7
+    uri: radio://0/20/2M/E7E7E7E7E7
     initial_position: [0.0429, -0.0085, 0.0158]
     type: cf21
 
