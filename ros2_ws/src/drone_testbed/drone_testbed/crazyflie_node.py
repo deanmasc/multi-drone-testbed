@@ -58,6 +58,12 @@ class CrazyflieNode(Node):
         # this nothing stops it walking out of the capture volume -- and once
         # the drone leaves tracking, position feedback is gone entirely.
         self.declare_parameter('geofence', 1.5)
+        # How far the streamed setpoint may get ahead of the drone's actual
+        # position before we stop advancing it. Without this the setpoint is an
+        # open integral: if the drone cannot follow -- still on the ground,
+        # thrust-limited, snagged -- the tracking error grows, the algorithm
+        # saturates its output, and the setpoint accelerates away on its own.
+        self.declare_parameter('max_lead', 0.3)
 
         self._drone_id = self.get_parameter('drone_id').value
         cf_name = self.get_parameter('cf_name').value
@@ -67,6 +73,7 @@ class CrazyflieNode(Node):
         self._flight_duration = self.get_parameter('flight_duration').value
         self._use_mocap_yaw = self.get_parameter('use_mocap_yaw').value
         self._geofence = self.get_parameter('geofence').value
+        self._max_lead = self.get_parameter('max_lead').value
 
         # Get the specific Crazyflie object from swarm
         self._cf = swarm.allcfs.crazyfliesByName[cf_name]
@@ -207,6 +214,24 @@ class CrazyflieNode(Node):
 
         # Keep z fixed at takeoff height
         self._desired_pos[2] = TAKEOFF_HEIGHT
+
+        # Leash the setpoint to the drone. This is the anti-windup: if the drone
+        # is not following -- still on the ground, thrust-limited, snagged --
+        # refuse to let the setpoint run away from it, and bleed off the
+        # velocity that accumulated while it was falling behind.
+        if self._real_pos is not None:
+            lead = self._desired_pos[:2] - self._real_pos[:2]
+            distance = float(np.linalg.norm(lead))
+            if distance > self._max_lead:
+                self._desired_pos[:2] = (
+                    self._real_pos[:2] + lead * (self._max_lead / distance)
+                )
+                self._desired_vel[:2] *= 0.5
+                self.get_logger().warn(
+                    f'Setpoint leashed: drone is {distance:.2f}m behind it '
+                    f'(limit {self._max_lead}m) -- is it actually flying?',
+                    throttle_duration_sec=1.0,
+                )
 
         # Geofence x/y. Zero the outward velocity component as well as clamping
         # the position, otherwise the integrator keeps winding up against the
