@@ -17,7 +17,7 @@ robots:
   drone_1:
     enabled: true
     uri: radio://0/20/2M/E7E7E7E7E7
-    initial_position: [0.0429, -0.0085, 0.0158]
+    initial_position: [-1.0, -1.0, 0.0158]
     type: cf21
 
 robot_types:

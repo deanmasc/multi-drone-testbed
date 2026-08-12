@@ -5,19 +5,23 @@ simulation:
   bounds: 2.0
 
 drones:
+  # Simulation only -- on hardware the start position comes from mocap, and the
+  # square anchors wherever the drone physically is. Kept in step with the real
+  # placement so sim and hardware sweep the same box.
   - id: "drone1"
-    initial_position: [0.0, 0.0]
+    initial_position: [-1.0, -1.0]
     initial_velocity: [0.0, 0.0]
     role: "leader"
 
 # A 2m square at 0.25 m/s: 8s per side, 32s for a full lap. Pass
 # flight_duration:=36 or more, or the run lands partway round.
 #
-# The square starts at the drone's position when the algorithm begins and
-# extends +x and +y from there, so [x0, x0+2] x [y0, y0+2] must fit inside the
-# flight volume -- start the drone in a corner, not the middle. The setpoint is
-# also geofenced in crazyflie_node (default +/-1.5m about the world origin),
-# which will clip a 2m square; raise it with geofence:= to suit the volume.
+# The square anchors at the drone's real position when the algorithm begins and
+# extends +x and +y from there -- nothing in this file sets that, it comes from
+# mocap. Place the drone at (-1, -1) and the square sweeps [-1, 1] x [-1, 1],
+# centred on the world origin and inside the default +/-1.5m geofence with 0.5m
+# to spare. Starting near the origin instead pushes it out to (+2.06, +1.96),
+# which is what tripped the geofence.
 algorithm:
   name: "Square"
   params:
