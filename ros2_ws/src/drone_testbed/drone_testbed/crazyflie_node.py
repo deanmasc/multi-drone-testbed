@@ -30,8 +30,8 @@ from motion_capture_tracking_interfaces.msg import NamedPoseArray
 from crazyflie_py import Crazyswarm
 
 
-TAKEOFF_HEIGHT = 0.5   # metres
-TAKEOFF_DURATION = 3.0  # seconds
+TAKEOFF_HEIGHT = 1   # metres
+TAKEOFF_DURATION = 4.0  # seconds
 LAND_DURATION = 3.0
 CONTROL_RATE = 25       # Hz -- how often we send cmdFullState
 
