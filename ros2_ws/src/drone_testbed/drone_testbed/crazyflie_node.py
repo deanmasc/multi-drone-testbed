@@ -40,6 +40,20 @@ CONTROL_RATE = 25       # Hz -- how often we send cmdFullState
 # (10Hz for Square), so this tolerates several missed messages.
 SETPOINT_TIMEOUT = 0.5  # seconds
 
+# How long the drone's mocap state may go missing before we abort. Losing mocap
+# is not a benign stall: crazyflie_server stops feeding external position to the
+# firmware, the onboard Kalman filter dead-reckons on IMU alone, and its estimate
+# drifts away from reality within a second or two. The controller then chases a
+# setpoint using a position it is increasingly wrong about, which is what tumbles
+# the drone. Landing blind is far better than flying blind.
+MOCAP_TIMEOUT = 0.5  # seconds
+
+# Extra distance the drone itself may be outside the geofence before aborting.
+# The setpoint is clamped at the fence, so normal tracking error puts the drone
+# slightly past it; this is the margin that separates "tracking lag" from "no
+# longer under control".
+GEOFENCE_BREACH_MARGIN = 0.3  # metres
+
 
 class CrazyflieNode(Node):
 
@@ -91,7 +105,12 @@ class CrazyflieNode(Node):
 
         # Real position from mocap (used to initialise desired_pos)
         self._real_pos = None
+        self._real_pos_time = 0.0
         self._running = False
+
+        # Set when something makes continued flight unsafe. fly() breaks out of
+        # its loop and main() lands, rather than hovering on regardless.
+        self._abort_reason = None
 
         # Low-level setpoint streaming state. Streaming cmdFullState preempts
         # the onboard high-level commander, so we stay on high-level hover
@@ -155,6 +174,7 @@ class CrazyflieNode(Node):
     def _state_callback(self, msg: Float64MultiArray):
         if len(msg.data) >= 2:
             self._real_pos = np.array([msg.data[0], msg.data[1], TAKEOFF_HEIGHT])
+            self._real_pos_time = self.get_clock().now().nanoseconds * 1e-9
 
     def _setpoint_callback(self, msg: Float64MultiArray):
         if len(msg.data) >= 4:
@@ -162,6 +182,39 @@ class CrazyflieNode(Node):
                 np.array(msg.data[0:2]), np.array(msg.data[2:4]),
             )
             self._setpoint_time = self.get_clock().now().nanoseconds * 1e-9
+
+    def _check_safe_to_continue(self) -> bool:
+        """Abort if the drone itself is lost or out of bounds.
+
+        Clamping the setpoint is not enough on its own: it stops us *asking* for
+        something out of bounds, but the drone keeps flying either way. These
+        are the conditions where continuing does more damage than landing.
+        """
+        if self._abort_reason is not None:
+            return False
+
+        now = self.get_clock().now().nanoseconds * 1e-9
+        if self._real_pos is None or (now - self._real_pos_time) > MOCAP_TIMEOUT:
+            self._abort_reason = 'lost mocap tracking'
+        else:
+            limit = self._geofence + GEOFENCE_BREACH_MARGIN
+            if np.any(np.abs(self._real_pos[:2]) > limit):
+                self._abort_reason = (
+                    f'drone left the geofence at '
+                    f'({self._real_pos[0]:+.2f}, {self._real_pos[1]:+.2f})'
+                )
+
+        if self._abort_reason is None:
+            return True
+
+        self.get_logger().error(f'ABORT: {self._abort_reason} -- landing')
+        self._running = False
+        self._cmd_accel = np.zeros(2)
+        if self._streaming:
+            # Hand control back so the land() in main() is not silently ignored.
+            self._streaming = False
+            self._cf.notifySetpointsStop()
+        return False
 
     def _setpoint_is_fresh(self) -> bool:
         if self._cmd_setpoint is None:
@@ -228,6 +281,10 @@ class CrazyflieNode(Node):
                 f'Engaging setpoint streaming at {self._desired_pos.round(3)}, '
                 f'yaw-hold {math.degrees(self._yaw_hold):.0f} deg'
             )
+
+        # Only meaningful once we are the ones flying the drone.
+        if not self._check_safe_to_continue():
+            return
 
         dt = 1.0 / CONTROL_RATE
         acc3 = np.array([self._cmd_accel[0], self._cmd_accel[1], 0.0])
@@ -319,16 +376,25 @@ class CrazyflieNode(Node):
         self.get_logger().info('Takeoff complete')
 
     def fly(self):
-        """Spin until the flight duration elapses (0 = until interrupted)."""
-        if self._flight_duration <= 0.0:
-            self.get_logger().info('Flying until Ctrl+C...')
-            rclpy.spin(self)
-            return
+        """Spin until the flight duration elapses, or a safety check aborts.
 
-        self.get_logger().info(f'Flying for {self._flight_duration:.1f}s...')
-        end = self._time_helper.time() + self._flight_duration
+        Always spin_once rather than rclpy.spin() even when flying until Ctrl+C:
+        spin() never returns, so an abort raised in the control callback would
+        have no way to bring the drone down.
+        """
+        untimed = self._flight_duration <= 0.0
+        if untimed:
+            self.get_logger().info('Flying until Ctrl+C...')
+            end = float('inf')
+        else:
+            self.get_logger().info(f'Flying for {self._flight_duration:.1f}s...')
+            end = self._time_helper.time() + self._flight_duration
+
         while rclpy.ok() and self._time_helper.time() < end:
             rclpy.spin_once(self, timeout_sec=0.05)
+            if self._abort_reason is not None:
+                self.get_logger().error('Flight aborted, landing now')
+                return
 
     def land(self):
         self.get_logger().info('Landing...')

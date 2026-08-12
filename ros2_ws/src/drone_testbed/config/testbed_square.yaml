@@ -13,21 +13,19 @@ drones:
     initial_velocity: [0.0, 0.0]
     role: "leader"
 
-# A 2m square at 0.25 m/s: 8s per side, 32s for a full lap. Pass
-# flight_duration:=36 or more, or the run lands partway round.
+# A 0.5m square at 0.25 m/s: 2s per side, 8s for a full lap. Pass
+# flight_duration:=12 or more, or the run lands partway round.
 #
 # The square anchors at the drone's real position when the algorithm begins and
 # extends +x and +y from there -- nothing in this file sets that, it comes from
-# mocap. Place the drone at (-1, -1) and the square sweeps [-1, 1] x [-1, 1],
-# centred on the world origin and inside the default +/-1.5m geofence with 0.5m
-# to spare. Starting near the origin instead pushes it out to (+2.06, +1.96),
-# which is what tripped the geofence.
+# mocap. Starting at (-0.25, -0.25) centres it on the world origin; starting at
+# (-1, -1) puts it in the corner of the volume. Either fits the default
+# +/-1.5m geofence easily at this size.
 algorithm:
   name: "Square"
   params:
-    side: 1.0          # m
-    speed: 0.25        # m/s -- 0.15 makes a 2m lap take 53s, longer than the
-                       # battery comfortably allows
+    side: 0.5          # m
+    speed: 0.25        # m/s
     start_delay: 3.0   # s of hover before moving, lets takeoff settle
     gain_kp: 1.0
     gain_kd: 0.6
