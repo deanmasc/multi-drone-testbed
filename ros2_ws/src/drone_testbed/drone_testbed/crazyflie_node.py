@@ -32,7 +32,7 @@ from crazyflie_py import Crazyswarm
 
 TAKEOFF_HEIGHT = 1.0   # metres
 TAKEOFF_DURATION = 4.0  # seconds
-LAND_DURATION = 3.0
+LAND_DURATION = 4.0
 CONTROL_RATE = 25       # Hz -- how often we send cmdFullState
 
 
