@@ -13,9 +13,9 @@ drones:
     initial_velocity: [0.0, 0.0]
     role: "leader"
 
-# A 0.5m square at 0.15 m/s: 3.3s per side, 13.3s for a full lap. Pass
-# flight_duration:=17 or more, or the run lands partway round. These are the
-# values that measured 1.47cm mean deviation -- the best result so far.
+# A 0.5m square at 0.15 m/s with rounded corners: 11.6s for a full lap (shorter
+# than the 13.3s of a hard-cornered lap, since the arcs cut the perimeter).
+# Pass flight_duration:=16 or more, or the run lands partway round.
 #
 # The square anchors at the drone's real position when the algorithm begins and
 # extends +x and +y from there -- nothing in this file sets that, it comes from
@@ -31,6 +31,13 @@ algorithm:
     gain_kp: 1.0
     gain_kd: 0.6
     max_accel: 0.3     # m/s^2
+    # Corners are replaced by quarter-circle arcs of this radius. A hard corner
+    # demands an instant velocity reversal -- infinite acceleration -- and the
+    # firmware answers by slamming the attitude over, which is the visible jerk
+    # and the least stable moment of the flight. At 0.15m the peak commanded
+    # acceleration drops from effectively infinite to 0.15 m/s^2. Set 0 to get
+    # hard corners back for comparison.
+    corner_radius: 0.15  # m
     # Flight log for judging path quality after the fact. Empty log_file puts a
     # timestamped file in whatever directory you launched from, so runs never
     # overwrite each other. log_interval cannot resolve finer than the control

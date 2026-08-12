@@ -5,11 +5,13 @@ as the first algorithm to run after PrintState: it is the simplest thing that
 actually commands motion, and a square is easy to judge by eye -- straight
 sides, square corners, returns to where it started.
 
-The square's first corner is the drone's position when the algorithm starts, so
-there is no position error on the first tick and therefore no lunge. The path
-then runs +x, +y, -x, -y, i.e. the square occupies
-[x0, x0 + side] x [y0, y0 + side]. Check that box is inside your flight volume
-before running.
+The path begins at the drone's position when the algorithm starts, so there is
+no position error on the first tick and therefore no lunge. It then runs +x, +y,
+-x, -y with each corner rounded into an arc.
+
+The start point sits one corner_radius along the first side, so the box swept is
+[x0 - r, x0 - r + side] x [y0, y0 + side] -- shifted by r in x relative to the
+start. Check that box is inside your flight volume before running.
 
 Logs actual and target position to a text file so the flown path can be
 compared against the commanded one after the fact -- the gap between the two
@@ -22,12 +24,16 @@ Config params:
   gain_kp:      PD proportional gain, default 1.0
   gain_kd:      PD derivative gain, default 0.6
   max_accel:    acceleration clamp (m/s^2), default 0.3
+  corner_radius: radius of the arc replacing each corner (m), default 0.15.
+                0 restores hard corners, which demand infinite acceleration and
+                make the drone jerk. Capped at side/2.
   log_file:     path to write to; empty = timestamped file in the working
                 directory, default ''
   log_interval: seconds between samples, default 0.1. Cannot resolve finer
                 than the control period (1 / control_rate).
 """
 
+import math
 import os
 from datetime import datetime
 from typing import Dict, List
@@ -61,6 +67,9 @@ class Square(BaseAlgorithm):
         self._kp = 1.0
         self._kd = 0.6
         self._max_accel = 0.3
+        self._corner_radius = 0.15
+        self._segments = None
+        self._perimeter = 0.0
         self._time = 0.0
         self._origins: Dict[str, np.ndarray] = {}
         self._log = None
@@ -102,12 +111,66 @@ class Square(BaseAlgorithm):
         self._kp = params.get('gain_kp', 1.0)
         self._kd = params.get('gain_kd', 0.6)
         self._max_accel = params.get('max_accel', 0.3)
+        self._corner_radius = params.get('corner_radius', 0.15)
         self._log_interval = params.get('log_interval', 0.1)
         self.reset()
         self._open_log(params.get('log_file', ''))
 
+    def _build_path(self, origin: np.ndarray):
+        """Segments of the rounded square, walked at constant speed.
+
+        A true square corner asks the drone to reverse its velocity in one tick,
+        which is an infinite acceleration demand. The firmware answers by
+        slamming the attitude over -- the jerk you can see in flight, and the
+        moment the drone is least stable. Replacing each corner with a quarter
+        circle keeps the speed constant and turns the velocity smoothly, so the
+        commanded path is one the drone can actually fly.
+
+        corner_radius 0 gives the old sharp-cornered square back.
+
+        The path starts at `origin`, which sits on the first side one radius
+        past the nominal corner -- so the drone begins with zero error and the
+        lap closes exactly where it started.
+        """
+        radius = min(self._corner_radius, self._side / 2.0)
+        # Nominal square corner, placed so the path begins at origin.
+        base = origin - np.array([radius, 0.0])
+        corners = [base + c * self._side for c in _CORNERS]
+        dirs = [
+            (corners[(i + 1) % 4] - corners[i]) / self._side for i in range(4)
+        ]
+
+        straight_len = self._side - 2.0 * radius
+        arc_len = 0.5 * math.pi * radius
+
+        segments = []
+        for i in range(4):
+            nxt = corners[(i + 1) % 4]
+            segments.append({
+                'kind': 'line',
+                'start': corners[i] + radius * dirs[i],
+                'dir': dirs[i],
+                'length': straight_len,
+            })
+            if radius > 0.0:
+                # Centre sits one radius inside both the incoming and outgoing
+                # edges, so the arc is tangent to each -- that tangency is what
+                # makes velocity continuous through the corner.
+                centre = nxt - radius * dirs[i] + radius * dirs[(i + 1) % 4]
+                start_vec = -dirs[(i + 1) % 4]
+                segments.append({
+                    'kind': 'arc',
+                    'centre': centre,
+                    'radius': radius,
+                    'start_angle': math.atan2(start_vec[1], start_vec[0]),
+                    'length': arc_len,
+                })
+
+        self._segments = segments
+        self._perimeter = sum(s['length'] for s in segments)
+
     def _target(self, origin: np.ndarray, t: float):
-        """Target position and velocity on the square at time t.
+        """Target position and velocity on the path at time t.
 
         Before start_delay elapses the target is the origin, held still, so the
         drone settles after takeoff instead of accelerating straight out of it.
@@ -115,20 +178,31 @@ class Square(BaseAlgorithm):
         if t < self._start_delay:
             return origin.copy(), np.zeros(2)
 
-        side_duration = self._side / self._speed
-        elapsed = t - self._start_delay
+        if self._segments is None:
+            self._build_path(origin)
 
-        # Which side we are on, and how far along it (0..1).
-        index = int(elapsed // side_duration) % 4
-        frac = (elapsed % side_duration) / side_duration
+        # Constant speed, so distance along the path is just speed * time.
+        distance = (self._speed * (t - self._start_delay)) % self._perimeter
 
-        here = _CORNERS[index] * self._side
-        nxt = _CORNERS[(index + 1) % 4] * self._side
-        leg = nxt - here
+        for seg in self._segments:
+            if distance > seg['length']:
+                distance -= seg['length']
+                continue
+            if seg['kind'] == 'line':
+                pos = seg['start'] + distance * seg['dir']
+                vel = self._speed * seg['dir']
+            else:
+                # Quarter turn, counter-clockwise, at constant speed.
+                angle = seg['start_angle'] + distance / seg['radius']
+                pos = seg['centre'] + seg['radius'] * np.array(
+                    [math.cos(angle), math.sin(angle)]
+                )
+                vel = self._speed * np.array([-math.sin(angle), math.cos(angle)])
+            return pos, vel
 
-        pos = origin + here + frac * leg
-        vel = leg / side_duration
-        return pos, vel
+        # Only reachable through float error at the very end of a lap.
+        seg = self._segments[-1]
+        return self._target(origin, self._start_delay)
 
     def compute_controls(
         self,
@@ -192,3 +266,4 @@ class Square(BaseAlgorithm):
         self._time = 0.0
         self._next_log = 0.0
         self._origins.clear()
+        self._segments = None
