@@ -167,6 +167,11 @@ class Square(BaseAlgorithm):
             controls[drone_id] = ControlOutput(
                 drone_id=drone_id,
                 acceleration=np.clip(accel, -self._max_accel, self._max_accel),
+                # We know the exact intended state, so publish it rather than
+                # making crazyflie_node rebuild it by integrating the
+                # acceleration above. The simulator ignores these.
+                position=target_pos,
+                velocity=target_vel,
             )
 
             if due:

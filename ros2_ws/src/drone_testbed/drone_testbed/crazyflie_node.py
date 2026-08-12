@@ -35,6 +35,11 @@ TAKEOFF_DURATION = 4.0  # seconds
 LAND_DURATION = 4.0
 CONTROL_RATE = 25       # Hz -- how often we send cmdFullState
 
+# How stale an explicit setpoint may be before we stop trusting it and fall
+# back to integrating cmd_accel. Algorithms publish at their control rate
+# (10Hz for Square), so this tolerates several missed messages.
+SETPOINT_TIMEOUT = 0.5  # seconds
+
 
 class CrazyflieNode(Node):
 
@@ -96,6 +101,12 @@ class CrazyflieNode(Node):
         self._mocap_yaw = 0.0   # latest yaw from mocap; streamed as yaw-hold
         self._yaw_hold = 0.0
 
+        # Explicit setpoint from a trajectory-following algorithm, if it offers
+        # one. Preferred over integrating cmd_accel, which reconstructs the
+        # intended path and accumulates bias with nothing to correct it.
+        self._cmd_setpoint = None    # ([x, y], [vx, vy])
+        self._setpoint_time = 0.0
+
         self.create_subscription(
             NamedPoseArray,
             '/poses',
@@ -114,6 +125,12 @@ class CrazyflieNode(Node):
             Float64MultiArray,
             f'/{self._drone_id}/state',
             self._state_callback,
+            10,
+        )
+        self.create_subscription(
+            Float64MultiArray,
+            f'/{self._drone_id}/cmd_pos',
+            self._setpoint_callback,
             10,
         )
         self.create_subscription(
@@ -138,6 +155,19 @@ class CrazyflieNode(Node):
     def _state_callback(self, msg: Float64MultiArray):
         if len(msg.data) >= 2:
             self._real_pos = np.array([msg.data[0], msg.data[1], TAKEOFF_HEIGHT])
+
+    def _setpoint_callback(self, msg: Float64MultiArray):
+        if len(msg.data) >= 4:
+            self._cmd_setpoint = (
+                np.array(msg.data[0:2]), np.array(msg.data[2:4]),
+            )
+            self._setpoint_time = self.get_clock().now().nanoseconds * 1e-9
+
+    def _setpoint_is_fresh(self) -> bool:
+        if self._cmd_setpoint is None:
+            return False
+        now = self.get_clock().now().nanoseconds * 1e-9
+        return (now - self._setpoint_time) < SETPOINT_TIMEOUT
 
     def _poses_callback(self, msg: NamedPoseArray):
         if not self._use_mocap_yaw:
@@ -200,17 +230,26 @@ class CrazyflieNode(Node):
             )
 
         dt = 1.0 / CONTROL_RATE
-
-        # Integrate acceleration into desired velocity and position
         acc3 = np.array([self._cmd_accel[0], self._cmd_accel[1], 0.0])
-        self._desired_vel += acc3 * dt
+
+        if self._setpoint_is_fresh():
+            # The algorithm knows exactly where the drone should be, so use
+            # that. Integrating cmd_accel instead reconstructs the same path
+            # from its correction signal, and since nothing pulls the result
+            # back toward the true target, any bias compounds lap after lap.
+            target_pos, target_vel = self._cmd_setpoint
+            self._desired_pos[:2] = target_pos
+            self._desired_vel[:2] = target_vel
+        else:
+            # Reactive algorithm (or the setpoint went stale): all we have is a
+            # push direction, so integrate it into a path.
+            self._desired_vel += acc3 * dt
+            self._desired_pos += self._desired_vel * dt
 
         # Clamp velocity
         xy_speed = np.linalg.norm(self._desired_vel[:2])
         if xy_speed > self._max_vel:
             self._desired_vel[:2] *= self._max_vel / xy_speed
-
-        self._desired_pos += self._desired_vel * dt
 
         # Keep z fixed at takeoff height
         self._desired_pos[2] = TAKEOFF_HEIGHT

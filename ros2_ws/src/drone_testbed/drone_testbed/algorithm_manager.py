@@ -54,10 +54,19 @@ class AlgorithmManagerNode(Node):
 
         # Publishers for each drone's command
         self._cmd_pubs = {}
+        # Optional explicit setpoint, published only by trajectory-following
+        # algorithms. crazyflie_node prefers it over integrating cmd_accel;
+        # drone_node (simulation) ignores it entirely.
+        self._pos_pubs = {}
         for drone_id in self._drone_ids:
             self._cmd_pubs[drone_id] = self.create_publisher(
                 Float64MultiArray,
                 f'/{drone_id}/cmd_accel',
+                10,
+            )
+            self._pos_pubs[drone_id] = self.create_publisher(
+                Float64MultiArray,
+                f'/{drone_id}/cmd_pos',
                 10,
             )
 
@@ -120,6 +129,11 @@ class AlgorithmManagerNode(Node):
                 msg = Float64MultiArray()
                 msg.data = ctrl.to_flat()
                 self._cmd_pubs[drone_id].publish(msg)
+
+            if ctrl.has_setpoint() and drone_id in self._pos_pubs:
+                pos_msg = Float64MultiArray()
+                pos_msg.data = ctrl.setpoint_to_flat()
+                self._pos_pubs[drone_id].publish(pos_msg)
 
     def _auto_start(self):
         if not self._started:
