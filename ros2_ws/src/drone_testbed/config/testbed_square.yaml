@@ -25,7 +25,7 @@ drones:
 algorithm:
   name: "Square"
   params:
-    side: 2.0          # m
+    side: 1.0          # m
     speed: 0.25        # m/s -- 0.15 makes a 2m lap take 53s, longer than the
                        # battery comfortably allows
     start_delay: 3.0   # s of hover before moving, lets takeoff settle
