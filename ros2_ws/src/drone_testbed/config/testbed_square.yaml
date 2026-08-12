@@ -10,18 +10,20 @@ drones:
     initial_velocity: [0.0, 0.0]
     role: "leader"
 
-# First algorithm that commands real motion. Values are deliberately timid --
-# a 0.5m square at 0.15 m/s takes ~3.3s per side, 13s for a full lap. Widen
-# only once a lap looks clean.
+# A 2m square at 0.25 m/s: 8s per side, 32s for a full lap. Pass
+# flight_duration:=36 or more, or the run lands partway round.
 #
 # The square starts at the drone's position when the algorithm begins and
-# extends +x and +y from there, so confirm [x0, x0+side] x [y0, y0+side] is
-# well inside the flight volume.
+# extends +x and +y from there, so [x0, x0+2] x [y0, y0+2] must fit inside the
+# flight volume -- start the drone in a corner, not the middle. The setpoint is
+# also geofenced in crazyflie_node (default +/-1.5m about the world origin),
+# which will clip a 2m square; raise it with geofence:= to suit the volume.
 algorithm:
   name: "Square"
   params:
-    side: 0.5          # m
-    speed: 0.15        # m/s
+    side: 2.0          # m
+    speed: 0.25        # m/s -- 0.15 makes a 2m lap take 53s, longer than the
+                       # battery comfortably allows
     start_delay: 3.0   # s of hover before moving, lets takeoff settle
     gain_kp: 1.0
     gain_kd: 0.6

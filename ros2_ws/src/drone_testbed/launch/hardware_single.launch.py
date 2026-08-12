@@ -36,6 +36,13 @@ def generate_launch_description():
         # mocap orientation is real. Set false for single-marker/position-only
         # tracking, which has no orientation to read.
         DeclareLaunchArgument('use_mocap_yaw', default_value='true'),
+        # Half-extent of the allowed x/y box about the world origin. Must be
+        # large enough for the whole commanded path or the setpoint gets clipped
+        # mid-flight; small enough that a runaway stays in the capture volume.
+        DeclareLaunchArgument('geofence', default_value='1.5'),
+        # How far the setpoint may get ahead of the drone before it stops
+        # advancing. The anti-windup for a drone that cannot follow.
+        DeclareLaunchArgument('max_lead', default_value='0.3'),
 
         # Converts VICON /poses → /drone1/state
         Node(
@@ -62,6 +69,12 @@ def generate_launch_description():
                 ),
                 'use_mocap_yaw': ParameterValue(
                     LaunchConfiguration('use_mocap_yaw'), value_type=bool,
+                ),
+                'geofence': ParameterValue(
+                    LaunchConfiguration('geofence'), value_type=float,
+                ),
+                'max_lead': ParameterValue(
+                    LaunchConfiguration('max_lead'), value_type=float,
                 ),
             }],
             output='screen',

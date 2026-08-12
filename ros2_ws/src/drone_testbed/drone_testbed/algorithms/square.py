@@ -40,6 +40,9 @@ from drone_testbed.utils.types import DroneState, ControlOutput
 
 
 # Unit square corners, traversed in order and wrapping back to the first.
+# Scaled by `side` at use. Keep these 0/1 -- changing them desynchronises the
+# leg length from side_duration, which silently scales the commanded speed.
+# To change the square's size, set `side` in the config.
 _CORNERS = np.array([
     [0.0, 0.0],
     [1.0, 0.0],
