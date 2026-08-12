@@ -102,6 +102,12 @@ class Trochoidal(BaseAlgorithm):
             controls[drone_id] = ControlOutput(
                 drone_id=drone_id,
                 acceleration=np.clip(accel, -0.5, 0.5),
+                # This is a trajectory-following algorithm: it knows the exact
+                # intended state, so send it rather than making crazyflie_node
+                # rebuild the path by integrating the acceleration above. The
+                # simulator ignores these.
+                position=target_pos,
+                velocity=target_vel,
             )
 
         return controls

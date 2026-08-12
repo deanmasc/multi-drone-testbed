@@ -1,0 +1,33 @@
+simulation:
+  dt: 0.1
+  control_rate: 10.0
+  sim_rate: 10.0
+  bounds: 2.0
+
+drones:
+  # One drone. algorithm_manager waits for every drone listed here to report
+  # state before it commands anything, so listing five (as testbed.yaml does)
+  # means a single real drone never flies.
+  - id: "drone1"
+    initial_position: [0.55, 0.0]
+    initial_velocity: [0.0, 0.0]
+    role: "leader"
+
+# Trochoidal is centred on the WORLD ORIGIN -- unlike Square it does not anchor
+# on the drone. At t=0 its target is at (orbit_radius + epicycle_radius, 0),
+# here (0.55, 0). Place the drone there or it will charge across the volume to
+# catch up the moment streaming engages.
+#
+# Radii reduced from the 0.8/0.3 defaults so the pattern fits inside the
+# geofence: the path stays within 0.55m of the origin. Derived limits at these
+# values -- peak speed R*W + r*w = 0.30 m/s, peak acceleration R*W^2 + r*w^2 =
+# 0.25 m/s^2, just inside crazyflie_node's 0.5 m/s^2 clamp.
+algorithm:
+  name: "Trochoidal"
+  params:
+    orbit_radius: 0.4      # m
+    epicycle_radius: 0.15  # m
+    orbit_speed: 0.3       # rad/s -- 21s per orbit
+    epicycle_speed: 1.2    # rad/s -- 5.2s per epicycle
+    gain_kp: 1.0
+    gain_kd: 0.6
