@@ -13,8 +13,9 @@ drones:
     initial_velocity: [0.0, 0.0]
     role: "leader"
 
-# A 0.5m square at 0.25 m/s: 2s per side, 8s for a full lap. Pass
-# flight_duration:=12 or more, or the run lands partway round.
+# A 0.5m square at 0.15 m/s: 3.3s per side, 13.3s for a full lap. Pass
+# flight_duration:=17 or more, or the run lands partway round. These are the
+# values that measured 1.47cm mean deviation -- the best result so far.
 #
 # The square anchors at the drone's real position when the algorithm begins and
 # extends +x and +y from there -- nothing in this file sets that, it comes from
@@ -25,7 +26,7 @@ algorithm:
   name: "Square"
   params:
     side: 0.5          # m
-    speed: 0.25        # m/s
+    speed: 0.15        # m/s
     start_delay: 3.0   # s of hover before moving, lets takeoff settle
     gain_kp: 1.0
     gain_kd: 0.6
