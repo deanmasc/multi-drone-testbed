@@ -4,6 +4,7 @@ Starts:
   - mocap_state_node  (VICON → drone state)
   - crazyflie_node    (receives commands → sends to real drone)
   - algorithm_manager (runs selected algorithm)
+  - live_visualizer   (real-time commanded vs actual plot; gui:=false to skip)
 
 Does NOT start sim_visualizer or drone_node -- those are sim-only.
 
@@ -16,6 +17,7 @@ Prerequisites on the lab machine:
 import os
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -43,6 +45,14 @@ def generate_launch_description():
         # How far the setpoint may get ahead of the drone before it stops
         # advancing. The anti-windup for a drone that cannot follow.
         DeclareLaunchArgument('max_lead', default_value='0.3'),
+        # Real-time plot of commanded vs actual position. Set false when
+        # running headless or over a connection without display forwarding.
+        DeclareLaunchArgument('gui', default_value='true'),
+        # Seconds of path held on the top-down view. Must exceed one lap of
+        # whatever is being flown or the shape never closes: a 0.5m square lap
+        # is 11.6s and a Trochoidal orbit is 21s, so the node's own 8s default
+        # is too short for either. 30s covers both with room to compare laps.
+        DeclareLaunchArgument('trail_seconds', default_value='30.0'),
 
         # Converts VICON /poses → /drone1/state
         Node(
@@ -87,6 +97,29 @@ def generate_launch_description():
             name='algorithm_manager',
             parameters=[{
                 'config_file': LaunchConfiguration('config'),
+            }],
+            output='screen',
+        ),
+
+        # Real-time plot: where the drone is vs where it was told to be.
+        # Takes the same geofence value as crazyflie_node so the box it draws
+        # is the box actually being enforced.
+        Node(
+            package='drone_testbed',
+            executable='live_visualizer',
+            name='live_visualizer',
+            condition=IfCondition(LaunchConfiguration('gui')),
+            parameters=[{
+                'config_file': LaunchConfiguration('config'),
+                'geofence': ParameterValue(
+                    LaunchConfiguration('geofence'), value_type=float,
+                ),
+                'max_lead': ParameterValue(
+                    LaunchConfiguration('max_lead'), value_type=float,
+                ),
+                'trail_seconds': ParameterValue(
+                    LaunchConfiguration('trail_seconds'), value_type=float,
+                ),
             }],
             output='screen',
         ),

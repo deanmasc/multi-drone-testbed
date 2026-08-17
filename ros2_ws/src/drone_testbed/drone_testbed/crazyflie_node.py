@@ -8,10 +8,15 @@ into position/velocity setpoints, and streams cmdFullState to the drone.
 Real position comes from the mocap_state_node (not this node).
 
 Topics:
-  Subscribes: /<drone_id>/cmd_accel   (Float64MultiArray [ax, ay])
-  Subscribes: /<drone_id>/state       (Float64MultiArray [x, y, vx, vy])
-                                       -- from mocap_state_node
-  Subscribes: /sim/control            (Int32: 0=stop, 1=start, 2=reset)
+  Subscribes: /<drone_id>/cmd_accel     (Float64MultiArray [ax, ay])
+  Subscribes: /<drone_id>/cmd_pos       (Float64MultiArray [x, y, vx, vy])
+                                         -- optional explicit setpoint
+  Subscribes: /<drone_id>/state         (Float64MultiArray [x, y, vx, vy])
+                                         -- from mocap_state_node
+  Subscribes: /poses                    (NamedPoseArray, for mocap yaw)
+  Subscribes: /sim/control              (Int32: 0=stop, 1=start, 2=reset)
+  Publishes:  /<drone_id>/setpoint      (Float64MultiArray [x, y, vx, vy, z])
+  Publishes:  /<drone_id>/flight_status (String)
 
 Usage:
   ros2 launch drone_testbed hardware_single.launch.py
@@ -23,7 +28,7 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
-from std_msgs.msg import Float64MultiArray, Int32
+from std_msgs.msg import Float64MultiArray, Int32, String
 
 from motion_capture_tracking_interfaces.msg import NamedPoseArray
 
@@ -126,6 +131,17 @@ class CrazyflieNode(Node):
         self._cmd_setpoint = None    # ([x, y], [vx, vy])
         self._setpoint_time = 0.0
 
+        # Telemetry flags, refreshed each control tick purely so the live
+        # visualizer can show *why* the setpoint moved the way it did. A
+        # deviation that comes from the leash or the geofence intervening is a
+        # different problem from one where the drone simply is not tracking.
+        self._leashed = False
+        self._fenced = False
+        self._setpoint_source = 'none'
+        # Until takeoff seeds _desired_pos it is still zeros, which would draw a
+        # phantom setpoint at the origin. Only publish once it means something.
+        self._setpoint_valid = False
+
         self.create_subscription(
             NamedPoseArray,
             '/poses',
@@ -154,6 +170,18 @@ class CrazyflieNode(Node):
         )
         self.create_subscription(
             Int32, '/sim/control', self._control_callback, 10,
+        )
+
+        # Telemetry for the live visualizer. This is the setpoint we actually
+        # stream to the firmware -- after the leash, geofence and speed clamp
+        # have had their say -- which is the only honest thing to compare the
+        # drone's real position against. /cmd_pos is the algorithm's intent and
+        # may differ; the gap between the two is itself worth seeing.
+        self._setpoint_pub = self.create_publisher(
+            Float64MultiArray, f'/{self._drone_id}/setpoint', 10,
+        )
+        self._status_pub = self.create_publisher(
+            String, f'/{self._drone_id}/flight_status', 10,
         )
 
         # Control timer
@@ -258,7 +286,48 @@ class CrazyflieNode(Node):
         self._cf.takeoff(targetHeight=TAKEOFF_HEIGHT, duration=0.5)
         self.get_logger().info('Streaming stopped, back on high-level hover')
 
+    def _flight_status(self) -> str:
+        """One-line description of what this node is doing right now."""
+        if self._abort_reason is not None:
+            return f'ABORT: {self._abort_reason}'
+        if not self._running:
+            return 'idle'
+        if not self._streaming:
+            return 'hover (high-level)'
+
+        status = f'streaming ({self._setpoint_source})'
+        if self._leashed:
+            status += ' [leashed]'
+        if self._fenced:
+            status += ' [geofence]'
+        return status
+
+    def _publish_telemetry(self):
+        """Publish the commanded setpoint and status for the live visualizer.
+
+        Called after the setpoint update on every tick, including the ticks that
+        return early, so the GUI keeps showing the commanded hover point while
+        the algorithm is quiet rather than freezing on the last streamed value --
+        and so the value it shows is the one just streamed, not the tick before.
+        """
+        if self._setpoint_valid:
+            msg = Float64MultiArray()
+            msg.data = [
+                float(self._desired_pos[0]), float(self._desired_pos[1]),
+                float(self._desired_vel[0]), float(self._desired_vel[1]),
+                float(self._desired_pos[2]),
+            ]
+            self._setpoint_pub.publish(msg)
+
+        status = String()
+        status.data = self._flight_status()
+        self._status_pub.publish(status)
+
     def _control_loop(self):
+        self._update_setpoint()
+        self._publish_telemetry()
+
+    def _update_setpoint(self):
         if not self._running:
             return
 
@@ -297,11 +366,13 @@ class CrazyflieNode(Node):
             target_pos, target_vel = self._cmd_setpoint
             self._desired_pos[:2] = target_pos
             self._desired_vel[:2] = target_vel
+            self._setpoint_source = 'explicit'
         else:
             # Reactive algorithm (or the setpoint went stale): all we have is a
             # push direction, so integrate it into a path.
             self._desired_vel += acc3 * dt
             self._desired_pos += self._desired_vel * dt
+            self._setpoint_source = 'integrated'
 
         # Clamp velocity
         xy_speed = np.linalg.norm(self._desired_vel[:2])
@@ -315,10 +386,12 @@ class CrazyflieNode(Node):
         # is not following -- still on the ground, thrust-limited, snagged --
         # refuse to let the setpoint run away from it, and bleed off the
         # velocity that accumulated while it was falling behind.
+        self._leashed = False
         if self._real_pos is not None:
             lead = self._desired_pos[:2] - self._real_pos[:2]
             distance = float(np.linalg.norm(lead))
             if distance > self._max_lead:
+                self._leashed = True
                 self._desired_pos[:2] = (
                     self._real_pos[:2] + lead * (self._max_lead / distance)
                 )
@@ -332,9 +405,11 @@ class CrazyflieNode(Node):
         # Geofence x/y. Zero the outward velocity component as well as clamping
         # the position, otherwise the integrator keeps winding up against the
         # limit and the drone lurches when it is finally free to move again.
+        self._fenced = False
         for axis in (0, 1):
             limit = math.copysign(self._geofence, self._desired_pos[axis])
             if abs(self._desired_pos[axis]) > self._geofence:
+                self._fenced = True
                 self._desired_pos[axis] = limit
                 if self._desired_vel[axis] * limit > 0:
                     self._desired_vel[axis] = 0.0
@@ -373,6 +448,7 @@ class CrazyflieNode(Node):
         if self._real_pos is not None:
             self._desired_pos = self._real_pos.copy()
         self._desired_pos[2] = TAKEOFF_HEIGHT
+        self._setpoint_valid = True
         self.get_logger().info('Takeoff complete')
 
     def fly(self):

@@ -41,10 +41,16 @@ Both paths share the same algorithm interface. An algorithm developed and tuned 
 
 ```
 VICON Tracker ──► mocap_state_node ──► /droneX/state ──► algorithm_manager
-                                                               │
-                                                    /droneX/cmd_accel
-                                                               │
-                                               crazyflie_node ──► Crazyflie drone
+                                            │                  │
+                                            │       /droneX/cmd_accel
+                                            │       /droneX/cmd_pos
+                                            │                  │
+                                            │          crazyflie_node ──► Crazyflie drone
+                                            │                  │
+                                            │        /droneX/setpoint
+                                            │        /droneX/flight_status
+                                            │                  │
+                                            └────────► live_visualizer
 ```
 
 ---
@@ -245,6 +251,48 @@ The active algorithm is set in `config/testbed.yaml` under `algorithm.name`.
 
 ---
 
+## Live Flight Visualizer
+
+`hardware_single.launch.py` starts a real-time 2D plot by default. Add `gui:=false`
+when running headless or over a connection without display forwarding.
+
+It plots three positions per drone and, more importantly, the gaps between them:
+
+| Trace | Topic | Meaning |
+|---|---|---|
+| **actual** (solid, filled dot) | `/<id>/state` | where the drone really is, from VICON |
+| **commanded** (dashed, X) | `/<id>/setpoint` | the setpoint `crazyflie_node` streams to the firmware, *after* the leash, geofence and speed clamp |
+| **algorithm intent** (dotted, grey) | `/<id>/cmd_pos` | the raw target the algorithm asked for — trajectory algorithms only |
+
+Reading it:
+
+- **actual vs commanded** is the drone's true tracking error — what the onboard
+  controller is actually succeeding or failing at. This is the `|error|` time series,
+  with the leash length (`max_lead`) drawn as a reference line.
+- **commanded vs intent** separating means the safety layer is rewriting the
+  algorithm's request. That looks like a control bug from the outside but is not one;
+  the status line names which limit is active (`[leashed]`, `[geofence]`).
+- The status line also shows the setpoint source (`explicit` vs `integrated`) and
+  flags `MOCAP STALE` when `/state` stops arriving.
+
+Run it standalone against an already-flying stack:
+
+```bash
+ros2 run drone_testbed live_visualizer --ros-args \
+    -p config_file:=config/testbed_vicon_test.yaml -p geofence:=1.5
+```
+
+It works in simulation too. Nothing publishes `/<id>/setpoint` there, so the
+commanded trace stays hidden and the error is measured against the algorithm's
+intent instead — the status line says which reference is in use.
+
+Useful parameters: `geofence` and `max_lead` (match what `crazyflie_node` was launched
+with, so the box and the leash line drawn are the ones actually enforced — the launch
+file wires both through automatically), `trail_seconds` (XY path length, default 8),
+`history_seconds` (time-series window, default 40), `plot_rate` (Hz, default 10).
+
+---
+
 ## Lab Computer Requirements (Windows, VICON PC)
 
 The VICON PC requires no software changes if it is already running VICON Tracker. Confirm:
@@ -286,7 +334,8 @@ multi-drone-testbed/
     │   ├── crazyflie_node.py          # Hardware drone node (Crazyswarm2)
     │   ├── mocap_state_node.py        # VICON → drone state publisher
     │   ├── algorithm_manager.py       # Runs selected algorithm at control rate
-    │   └── sim_visualizer.py          # Live matplotlib visualiser (ROS2 mode)
+    │   ├── sim_visualizer.py          # Simulation visualiser (positions only)
+    │   └── live_visualizer.py         # Live flight view: commanded vs actual
     ├── config/testbed.yaml            # Drone config + algorithm selection
     └── launch/
         ├── sim.launch.py              # Full simulation launch
