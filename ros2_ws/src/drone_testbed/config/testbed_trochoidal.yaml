@@ -9,19 +9,23 @@ drones:
   # state before it commands anything, so listing five (as testbed.yaml does)
   # means a single real drone never flies.
   - id: "drone1"
-    initial_position: [0.55, 0.0]
+    initial_position: [0.0, 0.0]
     initial_velocity: [0.0, 0.0]
     role: "leader"
 
-# Trochoidal is centred on the WORLD ORIGIN -- unlike Square it does not anchor
-# on the drone. At t=0 its target is at (orbit_radius + epicycle_radius, 0),
-# here (0.55, 0). Place the drone there or it will charge across the volume to
-# catch up the moment streaming engages.
+# With anchor_on_start (the default) the whole pattern is translated so it
+# begins wherever the drone actually is, exactly like Square -- so there is no
+# lunge on the first tick no matter where you put it, and initial_position here
+# only matters to the simulator.
 #
-# Radii reduced from the 0.8/0.3 defaults so the pattern fits inside the
-# geofence: the path stays within 0.55m of the origin. Derived limits at these
-# values -- peak speed R*W + r*w = 0.30 m/s, peak acceleration R*W^2 + r*w^2 =
-# 0.25 m/s^2, just inside crazyflie_node's 0.5 m/s^2 clamp.
+# Placement still decides where the pattern SITS, though. Starting at the
+# origin sweeps x [-1.0, 0.0], y [-0.52, +0.52] -- comfortably inside the
+# +/-1.5m geofence. Starting at the square's (-1, -1) corner would push it out
+# to 2.38m and hit the fence, so put the drone near the middle for this one.
+#
+# Radii reduced from the 0.8/0.3 defaults so the pattern fits. Derived limits:
+# peak speed R*W + r*w = 0.30 m/s, peak acceleration R*W^2 + r*w^2 = 0.25
+# m/s^2, both inside crazyflie_node's clamps (0.7 m/s, 0.5 m/s^2).
 algorithm:
   name: "Trochoidal"
   params:
@@ -31,3 +35,7 @@ algorithm:
     epicycle_speed: 1.2    # rad/s -- 5.2s per epicycle
     gain_kp: 1.0
     gain_kd: 0.6
+    # Translate the pattern to start under the drone. False pins it to the
+    # world origin, which needs the drone placed at (orbit_radius +
+    # epicycle_radius, 0) = (0.55, 0) by hand or it lunges.
+    anchor_on_start: true

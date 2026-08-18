@@ -17,6 +17,10 @@ Config params:
   epicycle_speed:  angular velocity of epicycle (rad/s), default 1.2
   gain_kp:         PD proportional gain, default 1.5
   gain_kd:         PD derivative gain, default 0.8
+  anchor_on_start: shift the whole pattern so it begins where the drones
+                   actually are, default True. False pins it to the world
+                   origin, which requires placing the drone at
+                   (orbit_radius + epicycle_radius, 0) by hand.
 """
 
 import math
@@ -41,6 +45,12 @@ class Trochoidal(BaseAlgorithm):
         self._kp = 1.5
         self._kd = 0.8
         self._time = 0.0
+        self._anchor = True
+        # Translation applied to the whole pattern, fixed on the first tick.
+        # Kept a real vector at all times so _target is safe to call before
+        # then -- _set_offset itself needs it while computing the offset.
+        self._offset = np.zeros(2)
+        self._anchored = False
 
     def name(self) -> str:
         return "Trochoidal"
@@ -52,7 +62,10 @@ class Trochoidal(BaseAlgorithm):
         self._epicycle_speed = params.get('epicycle_speed', 1.2)
         self._kp = params.get('gain_kp', 1.5)
         self._kd = params.get('gain_kd', 0.8)
+        self._anchor = params.get('anchor_on_start', True)
         self._time = 0.0
+        self._offset = np.zeros(2)
+        self._anchored = False
 
         # Assign each drone an evenly spaced phase offset around the orbit
         n = len(drone_ids)
@@ -66,8 +79,9 @@ class Trochoidal(BaseAlgorithm):
         W = self._orbit_speed       # orbit angular velocity
         w = self._epicycle_speed    # epicycle angular velocity
 
-        # Trochoidal position: large orbit + small epicycle
-        pos = np.array([
+        # Trochoidal position: large orbit + small epicycle, translated by the
+        # anchor offset so the pattern sits where the drones started.
+        pos = self._offset + np.array([
             R * math.cos(W * t + phase) + r * math.cos(w * t + phase),
             R * math.sin(W * t + phase) + r * math.sin(w * t + phase),
         ])
@@ -80,11 +94,45 @@ class Trochoidal(BaseAlgorithm):
 
         return pos, vel
 
+    def _set_offset(self, states: Dict[str, DroneState]) -> None:
+        """Fix where the pattern sits, once, from the drones' real positions.
+
+        Unlike Square, this path is a closed shape around a centre rather than
+        one that starts under the drone, so at t=0 its natural start is
+        (orbit_radius + epicycle_radius, 0) -- and a drone placed anywhere else
+        gets a saturated command on the very first tick and lunges across the
+        volume to catch up.
+
+        One shared offset is applied to every drone rather than anchoring each
+        on itself, because the formation is the point: the drones are evenly
+        phase-spaced around a *common* orbit, and anchoring individually would
+        scatter them into separate overlapping patterns. For evenly spaced
+        phases the untranslated positions sum to zero, so matching centroids
+        reduces to centring the pattern on the drones -- and for a single drone
+        it puts the path start exactly under it, giving zero initial error.
+        """
+        self._offset = np.zeros(2)
+        self._anchored = True
+        if not self._anchor:
+            return
+        actual = np.mean([s.position for s in states.values()], axis=0)
+        nominal = np.mean(
+            [self._target(self._phases[d], 0.0)[0]
+             for d in states if d in self._phases],
+            axis=0,
+        )
+        self._offset = actual - nominal
+
     def compute_controls(
         self,
         states: Dict[str, DroneState],
         dt: float,
     ) -> Dict[str, ControlOutput]:
+        # Must happen before the clock advances, so the anchor is computed
+        # against t=0 -- the same instant the drones are sitting still at.
+        if not self._anchored:
+            self._set_offset(states)
+
         self._time += dt
         controls = {}
 
@@ -114,3 +162,5 @@ class Trochoidal(BaseAlgorithm):
 
     def reset(self) -> None:
         self._time = 0.0
+        self._offset = np.zeros(2)
+        self._anchored = False
