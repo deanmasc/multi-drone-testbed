@@ -18,19 +18,26 @@ drones:
 # lunge on the first tick no matter where you put it, and initial_position here
 # only matters to the simulator.
 #
-# Placement still decides where the pattern SITS, though. Starting at the
-# origin sweeps x [-1.0, 0.0], y [-0.52, +0.52] -- comfortably inside the
-# +/-1.5m geofence. Starting at the square's (-1, -1) corner would push it out
-# to 2.38m and hit the fence, so put the drone near the middle for this one.
+# Placement still decides where the pattern SITS. Anchoring puts the drone at
+# the pattern's OUTER EDGE (t=0 is the furthest point along +x), so a start at
+# the origin throws the whole shape onto one side: x [-1.26, 0.0], y +/-0.63,
+# reaching 1.26m from the origin. That is what caps the size here -- the far
+# edge meets the +/-1.5m geofence before anything else does.
 #
-# Radii reduced from the 0.8/0.3 defaults so the pattern fits. Derived limits:
-# peak speed R*W + r*w = 0.30 m/s, peak acceleration R*W^2 + r*w^2 = 0.25
-# m/s^2, both inside crazyflie_node's clamps (0.7 m/s, 0.5 m/s^2).
+# To go bigger, place the drone at (orbit_radius + epicycle_radius, 0) instead.
+# That centres the pattern on the origin and roughly doubles what fits: e.g.
+# drone at (0.95, 0) with radii 0.70/0.25 sweeps 1.72m wide while staying
+# within 0.95m of the origin. Still lunge-free -- anchoring handles any
+# placement, it only decides where the shape lands.
+#
+# Derived limits at the values below: peak speed R*W + r*w = 0.37 m/s, peak
+# acceleration R*W^2 + r*w^2 = 0.30 m/s^2, both inside crazyflie_node's clamps
+# (0.7 m/s, 0.5 m/s^2).
 algorithm:
   name: "Trochoidal"
   params:
-    orbit_radius: 0.4      # m
-    epicycle_radius: 0.15  # m
+    orbit_radius: 0.5      # m
+    epicycle_radius: 0.18  # m
     orbit_speed: 0.3       # rad/s -- 21s per orbit
     epicycle_speed: 1.2    # rad/s -- 5.2s per epicycle
     gain_kp: 1.0
