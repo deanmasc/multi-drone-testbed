@@ -45,14 +45,39 @@ def laplacian_cycle(n):
 
 
 def laplacian_from_adjacency(ids, adjacency):
+    """Build L from either adjacency form.
+
+    A list of ids means unweighted (a_ij = 1); a dict means {id: weight}. The
+    weights matter: an unweighted directed cycle is circulant, and every
+    eigenvector of a circulant matrix has entries of equal modulus, so all
+    agents come out with identical radii no matter what else is tuned.
+    """
     n = len(ids)
     index = {d: i for i, d in enumerate(ids)}
     adj = np.zeros((n, n))
     for d, neighbours in adjacency.items():
-        for other in neighbours:
-            if d in index and other in index:
-                adj[index[d], index[other]] = 1.0
+        if d not in index:
+            continue
+        if isinstance(neighbours, dict):
+            pairs = neighbours.items()
+        else:
+            pairs = ((other, 1.0) for other in neighbours)
+        for other, weight in pairs:
+            if other in index:
+                adj[index[d], index[other]] = float(weight)
     return np.diag(adj.sum(1)) - adj
+
+
+def is_undamped(z, tol=1e-4):
+    """Is this pole effectively on the imaginary axis?
+
+    Judged RELATIVE to its own frequency, not against a fixed epsilon. Rescaling
+    a design in time multiplies every eigenvalue -- real parts included -- by
+    the same factor, so an absolute threshold would call the same design valid
+    at one speed and invalid at another. The nearest genuinely-damped pole sits
+    orders of magnitude away, so this stays unambiguous.
+    """
+    return abs(z.real) < tol * max(1.0, abs(z.imag)) and abs(z.imag) > 1e-6
 
 
 def system_matrix(lap, alpha, beta, kappa, theta):
@@ -86,16 +111,40 @@ def solve_gains(lam_k, lam_l, theta, beta):
     return kappa, alpha, omega_1, omega_2
 
 
-def verify(lap, alpha, beta, kappa, theta, tol=1e-7):
+def verify(lap, alpha, beta, kappa, theta, tol=1e-4):
     """Check the claim against the real system matrix, not the algebra."""
     eig = np.linalg.eigvals(system_matrix(lap, alpha, beta, kappa, theta))
     on_axis = sorted({round(abs(z.imag), 4)
-                      for z in eig if abs(z.real) < tol and abs(z.imag) > tol})
-    unstable = int((eig.real > tol).sum())
+                      for z in eig if is_undamped(z, tol)})
+    unstable = int((eig.real > tol * np.maximum(1.0, abs(eig.imag))).sum())
     return on_axis, unstable, eig
 
 
-def place_agents(lap, alpha, beta, kappa, theta, target_radius, tol=1e-7):
+def mode_amplitudes(lap, alpha, beta, kappa, theta, tol=1e-4):
+    """Per-agent radius weights for each surviving mode, from its eigenvector.
+
+    An agent's contribution from one mode scales with the modulus of that
+    agent's 2-vector block in the mode's eigenvector. This is what decides
+    whether the agents trace DIFFERENT annuli or share one, it depends only on
+    the graph, and it can be read off before anything flies -- which is the
+    whole question the paper's Fig. 4 raises.
+    """
+    n = lap.shape[0]
+    values, vectors = np.linalg.eig(
+        system_matrix(lap, alpha, beta, kappa, theta))
+    out = []
+    for i in sorted(range(len(values)), key=lambda k: values[k].imag):
+        z = values[i]
+        if not is_undamped(z, tol) or z.imag <= 0:
+            continue
+        vec = vectors[:2 * n, i]
+        mags = np.array([np.linalg.norm(vec[2 * k:2 * k + 2]) for k in range(n)])
+        if mags.max() > 1e-12:
+            out.append((z.imag, mags / mags.max()))
+    return out
+
+
+def place_agents(lap, alpha, beta, kappa, theta, target_radius, tol=1e-4):
     """Solve for starting positions that actually produce a pattern of a given size.
 
     The gains decide the SHAPE of the trochoid; the initial conditions decide
@@ -115,7 +164,7 @@ def place_agents(lap, alpha, beta, kappa, theta, target_radius, tol=1e-7):
 
     # One representative per conjugate pair, positive imaginary part.
     modes = [vectors[:, i] for i, z in enumerate(values)
-             if abs(z.real) < tol and z.imag > tol]
+             if is_undamped(z, tol) and z.imag > 0]
     if len(modes) < 2:
         return None
 
@@ -154,7 +203,34 @@ def simulate(lap, alpha, beta, kappa, theta, start, seconds=400.0, dt=0.005):
     return keep
 
 
-def report(lap, ids, alpha, beta, kappa, theta, start, geofence):
+def peak_demand(lap, alpha, beta, kappa, theta, start):
+    """Largest speed and acceleration the law asks for, transient included.
+
+    The geofence check answers 'will it stay in the room'. This answers 'can the
+    drone actually do it'. They are different limits and this one bites first:
+    the individual terms of the control law are far larger than their sum, so a
+    pattern whose steady-state acceleration is tiny can still demand several
+    times the clamp while the transient is settling. Starting from rest is what
+    causes it -- the undamped modes carry nonzero velocity, so a standing start
+    is never purely on them.
+    """
+    n = lap.shape[0]
+    coupling = -alpha * np.eye(2 * n) - kappa * np.kron(lap, rotation(theta))
+    pos = np.array(start, dtype=float).reshape(-1)
+    vel = np.zeros(2 * n)
+    dt = 0.005
+    top_acc = top_vel = 0.0
+    for _ in range(int(400.0 / dt)):
+        acc = coupling @ pos - beta * vel
+        top_acc = max(top_acc, np.abs(acc.reshape(n, 2)).max())
+        top_vel = max(top_vel, np.hypot(*vel.reshape(n, 2).T).max())
+        vel += acc * dt
+        pos += vel * dt
+    return top_vel, top_acc
+
+
+def report(lap, ids, alpha, beta, kappa, theta, start, geofence,
+           max_accel=0.5, max_vel=0.7):
     on_axis, unstable, _ = verify(lap, alpha, beta, kappa, theta)
     print(f"\n  alpha={alpha:.4f}  beta={beta:.4f}  kappa={kappa:.4f}  "
           f"theta={theta:.4f}")
@@ -171,6 +247,20 @@ def report(lap, ids, alpha, beta, kappa, theta, start, geofence):
                     for i in range(len(ids)))
     print(f"  periods                           : "
           f"{2 * math.pi / on_axis[0]:.1f}s and {2 * math.pi / on_axis[1]:.1f}s")
+    amps = mode_amplitudes(lap, alpha, beta, kappa, theta)
+    if amps:
+        print("  per-agent radius weights (predicted from the eigenvectors):")
+        for freq, mags in amps:
+            spread = 100.0 * (1.0 - mags.min() / mags.max())
+            print(f"    {freq:6.3f} rad/s  {np.round(mags, 3)}"
+                  f"   spread {spread:3.0f}%")
+        if max(1.0 - m.min() / m.max() for _, m in amps) < 0.01:
+            print("    -> every agent gets the SAME radius, so they will share "
+                  "one annulus and differ\n       only in phase. That is the "
+                  "circulant/cyclic case (paper Remark 4.2). Use a\n"
+                  "       weighted or non-cyclic adjacency to get the varied "
+                  "pattern of Fig. 4.")
+
     print(f"  {'agent':<10} {'centre':>18} {'r_min':>7} {'r_max':>7} {'max|pos|':>9}")
     worst = 0.0
     for i, drone_id in enumerate(ids):
@@ -185,6 +275,21 @@ def report(lap, ids, alpha, beta, kappa, theta, start, geofence):
     print(f"  peak INCLUDING transient          : {transient:.3f} m "
           f"({'inside' if transient < geofence else 'OUTSIDE'} the "
           f"{geofence} m geofence)")
+    top_vel, top_acc = peak_demand(lap, alpha, beta, kappa, theta, start)
+    print(f"  peak speed demanded               : {top_vel:.3f} m/s "
+          f"({'inside' if top_vel <= max_vel else 'OVER'} the {max_vel} clamp)")
+    print(f"  peak accel demanded               : {top_acc:.3f} m/s2 "
+          f"({'inside' if top_acc <= max_accel else 'OVER'} the "
+          f"{max_accel} clamp)")
+    if top_acc > max_accel:
+        print(f"    -> the clamp will cut the transient. Demand scales linearly "
+              f"with the pattern\n       radius and with the square of "
+              f"--rescale, so --target-radius "
+              f"{0.95 * max_accel / top_acc:.2f} of\n       the current one, or "
+              f"a smaller --rescale, clears it. Clipping mostly rescales the\n"
+              f"       result rather than deforming it, but it does perturb "
+              f"the mode projection.")
+
     ok = transient < geofence
     if not ok:
         print("  -> scale the initial positions down; radius comes from them, "
@@ -202,6 +307,10 @@ def main():
     ap.add_argument('--config', help='read drone ids/positions/adjacency from a testbed yaml')
     ap.add_argument('--target-radius', type=float, default=None,
                     help='solve for starting positions giving this envelope (m)')
+    ap.add_argument('--rescale', type=float, default=1.0,
+                    help='time-scale the solved design: multiplies every '
+                         'frequency and decay rate by this factor while '
+                         'leaving the pattern shape untouched')
     ap.add_argument('--sweep', action='store_true',
                     help='list every viable theta instead of picking one')
     args = ap.parse_args()
@@ -232,7 +341,15 @@ def main():
     if len(ids) < 3:
         print("\nFewer than 3 agents: the coupling term cannot make a pattern.")
         return
-    lam_k, lam_l = eig_lap[0], eig_lap[1]
+    # Take both from the upper half plane. A conjugate pair gives two
+    # mirror-image designs, and silently mixing halves changes which pattern
+    # you get; the paper walks consecutive convex-hull vertices in one
+    # direction, which is this branch.
+    upper = [z for z in eig_lap if z.imag > -1e-9 and abs(z) > 1e-9]
+    if len(upper) < 2:
+        print("\nnot enough distinct eigenvalues to place two pairs")
+        return
+    lam_k, lam_l = upper[0], upper[1]
 
     if args.sweep or args.theta is None:
         print("\nSearching theta for a configuration that is actually a trochoid...")
@@ -244,7 +361,7 @@ def main():
             kappa, alpha, w1, w2 = g
             if kappa <= 0 or alpha <= 0 or abs(w1 - w2) < 1e-3:
                 continue
-            on_axis, unstable, _ = verify(lap, alpha, beta := args.beta, kappa, theta)
+            on_axis, unstable, _ = verify(lap, alpha, args.beta, kappa, theta)
             if len(on_axis) == 2 and not unstable:
                 viable.append((theta, kappa, alpha, on_axis))
         if not viable:
@@ -268,8 +385,24 @@ def main():
             return
         kappa, alpha, _, _ = g
 
+    beta = args.beta
+    if args.rescale != 1.0:
+        c = args.rescale
+        alpha, beta, kappa = alpha * c * c, beta * c, kappa * c * c
+        print(f"\nTime-rescaled {c}x: (alpha, beta, kappa) -> "
+              f"(c^2*alpha, c*beta, c^2*kappa).")
+        print("  The closed loop is linear, so this multiplies every eigenvalue "
+              "by c exactly.\n  The eigenvectors are untouched -- same relative "
+              "radii, same frequency ratio,\n  same curve. Only the clock "
+              "changes.")
+        print(f"  NOTE: beta is now {beta:.2f}. It multiplies the measured "
+              "velocity, and mocap_state_node\n  differentiates position "
+              "raw, with no filtering -- so velocity noise reaches the\n"
+              "  acceleration command amplified by that factor. Watch for "
+              "command chatter.")
+
     if args.target_radius:
-        solved = place_agents(lap, alpha, args.beta, kappa, theta,
+        solved = place_agents(lap, alpha, beta, kappa, theta,
                               args.target_radius)
         if solved is None:
             print("\ncould not solve for placement at these gains")
@@ -280,10 +413,10 @@ def main():
         for drone_id, xy in zip(ids, start):
             print(f"    {drone_id}: [{xy[0]:+.3f}, {xy[1]:+.3f}]")
 
-    ok = report(lap, ids, alpha, args.beta, kappa, theta, start, args.geofence)
+    ok = report(lap, ids, alpha, beta, kappa, theta, start, args.geofence)
     print("\nPut these in the algorithm params block:\n")
     print(f"    alpha: {alpha:.4f}")
-    print(f"    beta:  {args.beta:.4f}")
+    print(f"    beta:  {beta:.4f}")
     print(f"    kappa: {kappa:.4f}")
     print(f"    theta: {theta:.4f}")
     if not ok:

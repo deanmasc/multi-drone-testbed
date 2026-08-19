@@ -47,8 +47,17 @@ Config params:
              contribution: without the rotation the motion is only
              trochoid-LIKE, and agents starting from identical states collapse
              onto a straight line.
-  adjacency: dict of drone_id -> list of neighbour ids it can observe.
-             Default is a directed cycle over the drones in config order.
+  adjacency: which agents each drone observes. Two accepted forms:
+                 drone1: ["drone3"]              unweighted, a_ij = 1
+                 drone1: {drone3: 5.0}           weighted, a_ij = 5.0
+             Weights are the a_ij of the paper's control law and are what let
+             agents end up on DIFFERENT annuli. An unweighted directed cycle --
+             the default -- has a circulant Laplacian, whose eigenvectors all
+             have equal modulus, so every agent necessarily gets the SAME
+             radius and only its phase differs (the paper's Remark 4.2: the
+             cyclic case degenerates to epicycloids). Break that symmetry to
+             get the varied pattern of the paper's Fig. 4.
+             Default is an unweighted directed cycle over the config order.
 """
 
 import math
@@ -61,6 +70,16 @@ from drone_testbed.algorithms.registry import register_algorithm
 from drone_testbed.utils.types import DroneState, ControlOutput
 
 
+def _weighted(neighbours) -> Dict[str, float]:
+    """Normalise either adjacency form to {neighbour_id: weight}.
+
+    A bare list is the unweighted case, a_ij = 1 for every listed neighbour.
+    """
+    if isinstance(neighbours, dict):
+        return {str(k): float(v) for k, v in neighbours.items()}
+    return {str(k): 1.0 for k in neighbours}
+
+
 @register_algorithm
 class TrochoidalConsensus(BaseAlgorithm):
 
@@ -69,7 +88,7 @@ class TrochoidalConsensus(BaseAlgorithm):
         self._beta = 1.0
         self._kappa = 0.591
         self._theta = 2.17
-        self._adjacency: Dict[str, List[str]] = {}
+        self._adjacency: Dict[str, Dict[str, float]] = {}
         self._max_accel = 0.5
         self._warned = False
 
@@ -85,12 +104,17 @@ class TrochoidalConsensus(BaseAlgorithm):
 
         adjacency = params.get('adjacency')
         if adjacency:
-            self._adjacency = {d: list(adjacency.get(d, [])) for d in drone_ids}
+            self._adjacency = {
+                d: _weighted(adjacency.get(d, [])) for d in drone_ids
+            }
         else:
-            # Directed cycle: each agent observes the next one round.
+            # Directed cycle: each agent observes the next one round. Note this
+            # default cannot produce per-agent radius variation -- see the
+            # module docstring.
             n = len(drone_ids)
             self._adjacency = {
-                d: [drone_ids[(i + 1) % n]] for i, d in enumerate(drone_ids)
+                d: {drone_ids[(i + 1) % n]: 1.0}
+                for i, d in enumerate(drone_ids)
             }
         self._warned = False
 
@@ -112,16 +136,16 @@ class TrochoidalConsensus(BaseAlgorithm):
                   'term cannot produce a pattern; expect decay to the origin.')
 
         for drone_id, state in states.items():
-            neighbours = self._adjacency.get(drone_id, [])
+            neighbours = self._adjacency.get(drone_id, {})
 
             # Relative position to neighbours: the ONLY non-local information
             # used. Everything else below is the agent's own state.
             relative = np.zeros(2)
-            for neighbour_id in neighbours:
+            for neighbour_id, weight in neighbours.items():
                 other = states.get(neighbour_id)
                 if other is None:
                     continue
-                relative += state.position - other.position
+                relative += weight * (state.position - other.position)
 
             accel = (
                 -self._alpha * state.position
