@@ -36,6 +36,9 @@ class AlgorithmManagerNode(Node):
 
         sim_cfg = self._config['simulation']
         self._dt = 1.0 / sim_cfg.get('control_rate', 5.0)
+        self.declare_parameter('auto_start_delay', 2.0)
+        self._auto_start_delay = self.get_parameter('auto_start_delay').value
+
         self._drone_ids = [d['id'] for d in self._config['drones']]
 
         # Current drone states
@@ -93,8 +96,15 @@ class AlgorithmManagerNode(Node):
         # Control timer
         self.create_timer(self._dt, self._control_loop)
 
-        # Auto-start after a short delay to let drone nodes initialize
-        self.create_timer(2.0, self._auto_start, callback_group=None)
+        # Auto-start after a delay, to let the drone nodes initialise. On
+        # hardware this must also outlast takeoff: crazyflie_node spends
+        # TAKEOFF_DURATION + 0.5s climbing, and in hybrid mode the simulated
+        # drones would otherwise start flying the formation against a real
+        # neighbour still sitting on the ground -- then the real one joins
+        # late and has to lunge to catch up.
+        self.create_timer(
+            self._auto_start_delay, self._auto_start, callback_group=None,
+        )
         self._started = False
 
         self.get_logger().info(

@@ -1,0 +1,71 @@
+# Hybrid hardware/simulation: one real drone flying alongside three virtual
+# ones, all running the same distributed consensus law.
+#
+# This works because nothing in the stack knows the difference. Every drone
+# publishes /<id>/state; for drone1 that comes from mocap_state_node reading
+# VICON, and for drone2-4 from drone_node integrating double-integrator
+# dynamics. algorithm_manager subscribes to all four and cannot tell them
+# apart, so the real drone genuinely reacts to the virtual ones and they react
+# to it. live_visualizer draws all four the same way.
+#
+# The point of the exercise: TrochoidalConsensus needs at least 3 agents (with
+# fewer, the coupling term vanishes and there is no pattern), and you have one
+# working drone. This gets the algorithm airborne anyway, with real flight
+# dynamics on one of the agents.
+
+simulation:
+  dt: 0.1
+  control_rate: 10.0
+  sim_rate: 10.0
+  # Virtual drones are clamped to the same box the real one is geofenced to,
+  # so a simulated agent cannot wander somewhere the real one would be aborted
+  # for following.
+  bounds: 1.5
+
+drones:
+  # drone1 is the REAL one. Its initial_position does not place it -- mocap
+  # does -- but PUT THE DRONE THERE ANYWAY. These positions are not arbitrary:
+  # they were solved by tools/design_consensus_gains.py --target-radius 0.6.
+  # Most arrangements project almost entirely onto the modes that decay, so the
+  # drones spiral in and the surviving pattern is centimetres across no matter
+  # how far apart they start (a symmetric ring is one of the bad cases). These
+  # were built from the undamped eigenvectors instead, so the whole initial
+  # displacement feeds the pattern. Re-run the tool if you change anything.
+  - id: "drone1"
+    initial_position: [-0.376, -0.428]
+    initial_velocity: [0.0, 0.0]
+    role: "leader"
+  - id: "drone2"
+    initial_position: [-0.051, 0.000]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone3"
+    initial_position: [-0.376, 0.428]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone4"
+    initial_position: [0.804, 0.000]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+
+# Gains from tools/design_consensus_gains.py --config <this file>.
+# Do not hand-tune these. A trochoid exists only when the closed loop has
+# exactly two distinct pairs of eigenvalues on the imaginary axis and all other
+# poles strictly stable; the gains are solved for, not chosen. Re-run the tool
+# after changing the number of drones or the adjacency.
+algorithm:
+  name: "TrochoidalConsensus"
+  params:
+    alpha: 0.4343   # absolute position -- centres the pattern on the origin
+    beta: 1.0000    # absolute velocity -- damping
+    kappa: 0.3263   # neighbour coupling
+    theta: 1.5836   # Cartesian coupling angle (rad)
+    max_accel: 0.5  # matches crazyflie_node's clamp
+    # Directed cycle: each agent observes exactly one other. This is the only
+    # non-local information any agent uses. Omit to get the same cycle by
+    # default; change it and the gains above must be recomputed.
+    adjacency:
+      drone1: ["drone2"]
+      drone2: ["drone3"]
+      drone3: ["drone4"]
+      drone4: ["drone1"]

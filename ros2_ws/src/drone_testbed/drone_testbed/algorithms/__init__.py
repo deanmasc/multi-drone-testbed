@@ -4,3 +4,4 @@ from . import consensus
 from . import trochoidal
 from . import print_state
 from . import square
+from . import trochoidal_consensus
