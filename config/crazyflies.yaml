@@ -17,7 +17,39 @@ robots:
   drone_1:
     enabled: true
     uri: radio://0/20/2M/E7E7E7E7E7
-    initial_position: [-1.0, -1.0, 0.0158]
+    initial_position: [0.235, -0.132, 0.0158]
+    type: cf21
+  # Second airframe. The scan reported this one as radio://0/50/250K, i.e. a
+  # different channel AND a different datarate from drone_1.
+  #
+  # It will work as written, but it is not the configuration you want. One
+  # Crazyradio dongle serves both drones, and it can only be tuned to one
+  # channel/datarate pair at a time -- so with these settings it retunes
+  # between every packet to drone_1 and every packet to drone_2. That costs
+  # throughput and, worse, adds jitter to the 25Hz cmdFullState stream that
+  # both drones' position controllers depend on. 250K also carries a packet in
+  # eight times the airtime of 2M.
+  #
+  # The fix is a two-minute job in cfclient (Connect -> Console/Config, or the
+  # "Radio Bandwidth"/"Radio Channel"/"Radio Address" fields under Settings):
+  # put this drone on 2M, and separate the two by ADDRESS rather than by
+  # datarate. Either of these is fine:
+  #
+  #     uri: radio://0/20/2M/E7E7E7E7E8    # same channel, different address
+  #     uri: radio://0/80/2M/E7E7E7E7E7    # different channel, same datarate
+  #
+  # The first is better: sharing one channel and datarate is what lets
+  # Crazyswarm2's broadcast path (the `broadcasts:` block below) address both
+  # drones in a single packet. Note that both drones currently sit on the
+  # factory-default address E7E7E7E7E7, so if you put them on the same channel
+  # you MUST change one address or they will both answer to the same packets.
+  #
+  # The key name here must match the VICON Tracker rigid body exactly, and is
+  # what cf_name/mocap_name are set to on the launch command line.
+  drone_2:
+    enabled: true
+    uri: radio://0/50/250K/E7E7E7E7E7
+    initial_position: [0.179, 0.219, 0.0158]
     type: cf21
 
 robot_types:

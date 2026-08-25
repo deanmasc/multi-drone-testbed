@@ -35,7 +35,12 @@ from motion_capture_tracking_interfaces.msg import NamedPoseArray
 from crazyflie_py import Crazyswarm
 
 
-TAKEOFF_HEIGHT = 1.0   # metres
+# Default hover altitude. Overridable per drone via the takeoff_height
+# parameter: with more than one real drone in the volume, separating them
+# in z is the only collision guard that does not depend on the algorithm
+# behaving, since the control law itself is purely 2D and knows nothing
+# about the other drone's physical extent.
+DEFAULT_TAKEOFF_HEIGHT = 1.0   # metres
 TAKEOFF_DURATION = 4.0  # seconds
 LAND_DURATION = 4.0
 CONTROL_RATE = 25       # Hz -- how often we send cmdFullState
@@ -88,6 +93,10 @@ class CrazyflieNode(Node):
         # thrust-limited, snagged -- the tracking error grows, the algorithm
         # saturates its output, and the setpoint accelerates away on its own.
         self.declare_parameter('max_lead', 0.3)
+        # Hover altitude for this drone. The algorithms are 2D and pin z,
+        # so giving each real drone its own height is free vertical
+        # separation -- see DEFAULT_TAKEOFF_HEIGHT.
+        self.declare_parameter('takeoff_height', DEFAULT_TAKEOFF_HEIGHT)
 
         self._drone_id = self.get_parameter('drone_id').value
         cf_name = self.get_parameter('cf_name').value
@@ -98,6 +107,8 @@ class CrazyflieNode(Node):
         self._use_mocap_yaw = self.get_parameter('use_mocap_yaw').value
         self._geofence = self.get_parameter('geofence').value
         self._max_lead = self.get_parameter('max_lead').value
+        self._takeoff_height = float(
+            self.get_parameter('takeoff_height').value)
 
         # Get the specific Crazyflie object from swarm
         self._cf = swarm.allcfs.crazyfliesByName[cf_name]
@@ -184,6 +195,18 @@ class CrazyflieNode(Node):
             String, f'/{self._drone_id}/flight_status', 10,
         )
 
+        # Fleet-wide abort. With one real drone, aborting alone was enough.
+        # With two or more it is not: the control law couples them, so a drone
+        # that has lost tracking or left the fence is still an input to every
+        # other drone's acceleration, and it is now descending through a volume
+        # they are still flying in. Any node that aborts says so here, and every
+        # other node lands as well. The message carries the originating
+        # drone_id so a node ignores its own.
+        self._abort_pub = self.create_publisher(String, '/sim/abort', 10)
+        self.create_subscription(
+            String, '/sim/abort', self._peer_abort_callback, 10,
+        )
+
         # Control timer
         self.create_timer(1.0 / CONTROL_RATE, self._control_loop)
 
@@ -201,7 +224,8 @@ class CrazyflieNode(Node):
 
     def _state_callback(self, msg: Float64MultiArray):
         if len(msg.data) >= 2:
-            self._real_pos = np.array([msg.data[0], msg.data[1], TAKEOFF_HEIGHT])
+            self._real_pos = np.array(
+                [msg.data[0], msg.data[1], self._takeoff_height])
             self._real_pos_time = self.get_clock().now().nanoseconds * 1e-9
 
     def _setpoint_callback(self, msg: Float64MultiArray):
@@ -210,6 +234,20 @@ class CrazyflieNode(Node):
                 np.array(msg.data[0:2]), np.array(msg.data[2:4]),
             )
             self._setpoint_time = self.get_clock().now().nanoseconds * 1e-9
+
+    def _peer_abort_callback(self, msg: String):
+        origin, _, reason = msg.data.partition(':')
+        if origin == self._drone_id or self._abort_reason is not None:
+            return
+        self._abort_reason = f'{origin} aborted ({reason.strip()})'
+        self.get_logger().error(
+            f'ABORT: {self._abort_reason} -- landing in sympathy'
+        )
+        self._running = False
+        self._cmd_accel = np.zeros(2)
+        if self._streaming:
+            self._streaming = False
+            self._cf.notifySetpointsStop()
 
     def _check_safe_to_continue(self) -> bool:
         """Abort if the drone itself is lost or out of bounds.
@@ -236,6 +274,9 @@ class CrazyflieNode(Node):
             return True
 
         self.get_logger().error(f'ABORT: {self._abort_reason} -- landing')
+        notice = String()
+        notice.data = f'{self._drone_id}:{self._abort_reason}'
+        self._abort_pub.publish(notice)
         self._running = False
         self._cmd_accel = np.zeros(2)
         if self._streaming:
@@ -283,7 +324,7 @@ class CrazyflieNode(Node):
         self._cf.notifySetpointsStop()
         # Brief takeoff re-engages the high-level hover at the current height
         # (same trick as the reference pursuit-evasion implementation).
-        self._cf.takeoff(targetHeight=TAKEOFF_HEIGHT, duration=0.5)
+        self._cf.takeoff(targetHeight=self._takeoff_height, duration=0.5)
         self.get_logger().info('Streaming stopped, back on high-level hover')
 
     def _flight_status(self) -> str:
@@ -342,7 +383,7 @@ class CrazyflieNode(Node):
             if self._real_pos is None:
                 return  # don't engage until mocap tells us where the drone is
             self._desired_pos = self._real_pos.copy()
-            self._desired_pos[2] = TAKEOFF_HEIGHT
+            self._desired_pos[2] = self._takeoff_height
             self._desired_vel = np.zeros(3)
             self._yaw_hold = self._mocap_yaw
             self._streaming = True
@@ -380,7 +421,7 @@ class CrazyflieNode(Node):
             self._desired_vel[:2] *= self._max_vel / xy_speed
 
         # Keep z fixed at takeoff height
-        self._desired_pos[2] = TAKEOFF_HEIGHT
+        self._desired_pos[2] = self._takeoff_height
 
         # Leash the setpoint to the drone. This is the anti-windup: if the drone
         # is not following -- still on the ground, thrust-limited, snagged --
@@ -440,14 +481,15 @@ class CrazyflieNode(Node):
         # later run, so clear it unconditionally at startup.
         self._cf.notifySetpointsStop()
 
-        self.get_logger().info(f'Taking off to {TAKEOFF_HEIGHT}m...')
-        self._cf.takeoff(targetHeight=TAKEOFF_HEIGHT, duration=TAKEOFF_DURATION)
+        self.get_logger().info(f'Taking off to {self._takeoff_height}m...')
+        self._cf.takeoff(
+            targetHeight=self._takeoff_height, duration=TAKEOFF_DURATION)
         self._time_helper.sleep(TAKEOFF_DURATION + 0.5)
 
         # Seed desired pos at current real position after takeoff
         if self._real_pos is not None:
             self._desired_pos = self._real_pos.copy()
-        self._desired_pos[2] = TAKEOFF_HEIGHT
+        self._desired_pos[2] = self._takeoff_height
         self._setpoint_valid = True
         self.get_logger().info('Takeoff complete')
 
