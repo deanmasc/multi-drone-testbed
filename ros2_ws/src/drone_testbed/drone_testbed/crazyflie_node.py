@@ -50,6 +50,15 @@ CONTROL_RATE = 25       # Hz -- how often we send cmdFullState
 # (10Hz for Square), so this tolerates several missed messages.
 SETPOINT_TIMEOUT = 0.5  # seconds
 
+# How long we may go without a cmd_accel before we stop acting on the last
+# one. Integrating a stale acceleration is not a safe failure mode: velocity
+# ramps, the setpoint runs away, and the drone follows it -- a flyaway caused
+# by the algorithm going SILENT rather than by it commanding anything wrong.
+# algorithm_manager stops publishing entirely if any single drone drops out of
+# /poses, so a neighbour losing tracking is enough to trigger it.
+ACCEL_TIMEOUT = 0.5   # seconds -- freeze the setpoint
+ACCEL_ABORT = 3.0     # seconds -- give up and land
+
 # How long the drone's mocap state may go missing before we abort. Losing mocap
 # is not a benign stall: crazyflie_server stops feeding external position to the
 # firmware, the onboard Kalman filter dead-reckons on IMU alone, and its estimate
@@ -118,6 +127,8 @@ class CrazyflieNode(Node):
         self._desired_pos = np.zeros(3)   # [x, y, z]
         self._desired_vel = np.zeros(3)   # [vx, vy, vz]
         self._cmd_accel = np.zeros(2)     # [ax, ay] from algorithm
+        self._accel_time = 0.0            # when it last arrived
+        self._frozen = False              # holding position, algorithm silent
 
         # Real position from mocap (used to initialise desired_pos)
         self._real_pos = None
@@ -221,6 +232,7 @@ class CrazyflieNode(Node):
                 -self._max_acc,
                 self._max_acc,
             )
+            self._accel_time = self.get_clock().now().nanoseconds * 1e-9
 
     def _state_callback(self, msg: Float64MultiArray):
         if len(msg.data) >= 2:
@@ -285,6 +297,61 @@ class CrazyflieNode(Node):
             self._cf.notifySetpointsStop()
         return False
 
+    def _check_algorithm_alive(self) -> bool:
+        """Stop integrating if cmd_accel has gone quiet; land if it stays quiet.
+
+        Returning False holds the streamed setpoint exactly where it is, which
+        keeps the firmware on a station-hold instead of chasing an integral of
+        a command nobody is sending any more. An explicit setpoint is exempt:
+        that path assigns position outright rather than accumulating, so a
+        stale one is merely old, not divergent, and _setpoint_is_fresh already
+        governs it.
+        """
+        if self._setpoint_is_fresh():
+            self._frozen = False
+            return True
+
+        silence = self.get_clock().now().nanoseconds * 1e-9 - self._accel_time
+        if silence < ACCEL_TIMEOUT:
+            self._frozen = False
+            return True
+
+        if silence >= ACCEL_ABORT:
+            self._abort_reason = (
+                f'no algorithm command for {silence:.1f}s'
+            )
+            self.get_logger().error(f'ABORT: {self._abort_reason} -- landing')
+            notice = String()
+            notice.data = f'{self._drone_id}:{self._abort_reason}'
+            self._abort_pub.publish(notice)
+            self._running = False
+            self._cmd_accel = np.zeros(2)
+            if self._streaming:
+                self._streaming = False
+                self._cf.notifySetpointsStop()
+            return False
+
+        # Freeze. Zero the velocity too -- leaving it set would walk the
+        # setpoint onward at a constant rate, which is the runaway in slow
+        # motion rather than a fix for it.
+        if not self._frozen:
+            self._frozen = True
+            self.get_logger().warn(
+                f'No cmd_accel for {silence:.2f}s -- holding position. '
+                f'algorithm_manager stops publishing if ANY drone drops out '
+                f'of /poses, so check the other drones first.'
+            )
+        self._cmd_accel = np.zeros(2)
+        self._desired_vel[:2] = 0.0
+        self._cf.cmdFullState(
+            pos=self._desired_pos,
+            vel=self._desired_vel,
+            acc=np.zeros(3),
+            yaw=self._yaw_hold,
+            omega=np.zeros(3),
+        )
+        return False
+
     def _setpoint_is_fresh(self) -> bool:
         if self._cmd_setpoint is None:
             return False
@@ -335,6 +402,9 @@ class CrazyflieNode(Node):
             return 'idle'
         if not self._streaming:
             return 'hover (high-level)'
+
+        if self._frozen:
+            return 'streaming [FROZEN: no algorithm command]'
 
         status = f'streaming ({self._setpoint_source})'
         if self._leashed:
@@ -394,6 +464,9 @@ class CrazyflieNode(Node):
 
         # Only meaningful once we are the ones flying the drone.
         if not self._check_safe_to_continue():
+            return
+
+        if not self._check_algorithm_alive():
             return
 
         dt = 1.0 / CONTROL_RATE
