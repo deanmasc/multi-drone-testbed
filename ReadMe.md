@@ -12,7 +12,7 @@ The testbed provides:
 - A physics-accurate 2D simulation for rapid algorithm iteration
 - A pluggable algorithm interface so new strategies can be added without changing the core framework
 - A hardware pipeline connecting real Crazyflie 2.x drones through VICON pose estimation to the same algorithm interface
-- Three implemented distributed algorithms: Leader-Follower, Consensus Formation, and Trochoidal
+- Implemented distributed algorithms: Leader-Follower, Consensus Formation, Trochoidal, Trochoidal Consensus, and Flocking
 
 ---
 
@@ -80,6 +80,20 @@ Each drone independently follows a trochoidal trajectory — the superposition o
 - **Communication:** None (fully independent)
 - **Path:** `p_i(t) = [R·cos(Ωt + φ_i) + r·cos(ωt + φ_i), R·sin(Ωt + φ_i) + r·sin(ωt + φ_i)]`
 - **Use case:** Coverage and area-scanning patterns where communication cannot be guaranteed
+
+### 4. Flocking (`Flocking`)
+
+Olfati-Saber's flocking law (IEEE TAC 51(3), 2006, Algorithm 2) — Reynolds' boids
+rules written as a control law. Each drone repels neighbours that are too close,
+attracts those that are too far, matches their velocity, and follows a shared
+virtual leader (the γ-agent).
+
+- **Communication:** Range-based and *dynamic* — neighbours are whoever is currently within `sense_range`. Unlike the other algorithms there is no configured adjacency graph; the graph forms and breaks as the drones move.
+- **Control law:** `u_i = c1α·Σ φ_α(‖q_j−q_i‖_σ)·n_ij + c2α·Σ a_ij·(p_j−p_i) − c1γ·(q_i−q_γ) − c2γ·(p_i−p_γ)`
+- **Use case:** Collision-free group transit; the standard baseline that most later flocking work is compared against
+- **Caveat:** the γ term broadcasts the same target to every agent, so only the α terms are strictly local. And once the lattice settles, relative motion stops — all agents trace the *same* curve at fixed offsets, unlike `TrochoidalConsensus`.
+
+Config: `config/testbed_flocking.yaml`
 
 ### Algorithm Parameters
 
@@ -156,9 +170,19 @@ pip3 install numpy matplotlib pyyaml
 
 **Run:**
 ```bash
+# Algorithms that have their own tuned config — use --config
+python3 run_sim.py --config testbed_flocking.yaml
+python3 run_sim.py --config testbed_fig4.yaml        # TrochoidalConsensus
+python3 run_sim.py --config testbed_trochoidal.yaml
+
+# Or swap the class against the default config
 python3 run_sim.py --algo Trochoidal
 # Options: LeaderFollower | ConsensusFormation | Trochoidal
+#          TrochoidalConsensus | Flocking | Square | PrintState
 ```
+
+`--algo` swaps only the class — it still reads whatever parameters the loaded
+config holds. An algorithm with its own config wants `--config`.
 
 The simulation window shows:
 - Drone positions (coloured markers) with ID labels

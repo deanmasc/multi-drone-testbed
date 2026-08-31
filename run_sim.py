@@ -4,9 +4,13 @@ Runs the full testbed simulation (physics + algorithm) and
 displays a live matplotlib window.
 
 Usage:
-    python run_sim.py                          # uses config/testbed.yaml
-    python run_sim.py --algo ConsensusFormation
-    python run_sim.py --algo LeaderFollower
+    python run_sim.py                             # uses config/testbed.yaml
+    python run_sim.py --algo ConsensusFormation   # same config, different algorithm
+    python run_sim.py --config testbed_flocking.yaml
+
+Note that --algo only swaps the class; it still reads the parameters from
+whichever config is loaded. An algorithm with its own tuned config wants
+--config, not --algo.
 """
 
 import sys
@@ -33,10 +37,27 @@ import yaml
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-CONFIG_PATH = os.path.join(
-    os.path.dirname(__file__),
-    'ros2_ws', 'src', 'drone_testbed', 'config', 'testbed.yaml'
+CONFIG_DIR = os.path.join(
+    os.path.dirname(__file__), 'ros2_ws', 'src', 'drone_testbed', 'config'
 )
+CONFIG_PATH = os.path.join(CONFIG_DIR, 'testbed.yaml')
+
+
+def resolve_config(name):
+    """Accept a bare filename from the config dir, or any path."""
+    if name is None:
+        return CONFIG_PATH
+    if os.path.exists(name):
+        return name
+    candidate = os.path.join(CONFIG_DIR, name)
+    if os.path.exists(candidate):
+        return candidate
+    available = sorted(
+        f for f in os.listdir(CONFIG_DIR) if f.endswith('.yaml')
+    )
+    raise SystemExit(
+        f"Config not found: {name}\nAvailable in config/: {', '.join(available)}"
+    )
 
 DRONE_COLORS = [
     '#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6',
@@ -80,9 +101,11 @@ class DroneSimState:
 
 # ── Main sim loop ──────────────────────────────────────────────────────────────
 
-def run(algo_name_override=None):
-    with open(CONFIG_PATH) as f:
+def run(algo_name_override=None, config_name=None):
+    config_path = resolve_config(config_name)
+    with open(config_path) as f:
         config = yaml.safe_load(f)
+    print(f"Config: {config_path}")
 
     sim_cfg = config['simulation']
     dt = sim_cfg.get('dt', 0.1)
@@ -245,7 +268,13 @@ if __name__ == '__main__':
     parser.add_argument(
         '--algo',
         default=None,
-        help='Algorithm name (e.g. LeaderFollower, ConsensusFormation)',
+        help='Override the algorithm class name (e.g. ConsensusFormation)',
+    )
+    parser.add_argument(
+        '--config',
+        default=None,
+        help='Config file: a bare name from config/ (e.g. testbed_flocking.yaml) '
+             'or any path. Default: testbed.yaml',
     )
     args = parser.parse_args()
-    run(algo_name_override=args.algo)
+    run(algo_name_override=args.algo, config_name=args.config)
