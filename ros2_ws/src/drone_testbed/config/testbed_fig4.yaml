@@ -24,7 +24,8 @@
 # depend only on the graph, so the rescaling below does not change them):
 #     slow mode   [0.657 0.635 0.394 1.000]   61% spread
 #     fast mode   [1.000 0.600 0.600 1.000]   40% spread
-# Which comes out as steady-state radii of 0.318 / 0.246 / 0.202 / 0.425 m.
+# Which at the gains below comes out as measured steady-state orbit radii of
+# 0.322 / 0.246 / 0.193 / 0.397 m for drones 1/2/3/4.
 # The frequency ratio is exactly 10/3 -- rational, so the curves CLOSE rather
 # than filling an annulus densely, which is what makes four clean distinct
 # shapes rather than four smeared bands.
@@ -52,7 +53,9 @@ simulation:
   bounds: 1.5
 
 drones:
-  # drone1 is the real one; mocap places it, but PUT IT THERE ANYWAY. Solved by
+  # drone1 and drone4 are the ones to fly for real -- they are the only pair
+  # that stays safely apart (0.354m); see the SEPARATION note below. Mocap
+  # places them, but PUT THEM THERE ANYWAY. Solved by
   # tools/design_consensus_gains.py --target-radius 0.45, built from the undamped
   # eigenvectors so the whole initial displacement feeds the pattern instead of
   # the modes that decay. Re-run the tool if you change anything at all.
@@ -83,27 +86,43 @@ drones:
 # is what makes this flyable -- as published the periods are 114s and 381s and
 # the figure is a snapshot at t = 2500s.
 #
-# At 8x: periods 47.6s and 14.3s, transient settles in about 13s, steady-state
-# envelope 0.450m, worst excursion including the transient 0.482m.
+# Measured from the gains actually written below (rescale 6), by computing the
+# closed-loop eigenvalues and by running the algorithm:
+#   exactly 2 pairs on the imaginary axis  <- the trochoid condition holds
+#   slow period 63.53s, fast period 19.06s, ratio 3.3337 (= 10/3)
+#   transient settles in about 12.5s (slowest decaying pole -0.239)
+#   steady-state envelope 0.397m, and the same including the transient
 #
 # HOW LONG TO FLY. The frequency ratio is 10/3, so the curve only closes after
-# the LCM of the two periods -- 3 slow periods, about 143s -- plus the 13s
-# transient. Use flight_duration:=160.0. At 60s you see roughly one slow period
-# and the shape will not have closed.
+# the LCM of the two periods -- 3 slow periods, 190.6s -- plus the 12.5s
+# transient. Use flight_duration:=205.0. At 60s you see less than one slow
+# period and the shape will not have closed.
+#   That is a 3.5-minute flight. Start on a fresh battery and watch for the
+#   3.8V warning in config/crazyflies.yaml; there is no low-battery abort in
+#   crazyflie_node yet.
 #
-# THE ACCELERATION CLAMP. Peak demand is about 0.93 m/s^2, above the 0.5 clamp
-# in both this algorithm and crazyflie_node, so the clamp does cut the first few
-# seconds. This is a standing-start artifact, not a steady-state one: the
-# undamped modes carry nonzero velocity, so beginning at rest cannot sit purely
-# on them, and the law asks for a hard initial correction. Once the pattern is
-# established the demand is around 0.06 m/s^2, more than twenty times under the
-# clamp.
-# Simulated through this exact algorithm WITH its clamp, the clipping is brief
-# and rescales the result rather than deforming it -- the per-agent radius
-# ratios hold to within about 2%, which is the property that matters here.
-# If you want it clean anyway, --target-radius 0.24 clears the clamp entirely
-# (demand is linear in radius: 0.925 * 0.24/0.45 = 0.49), at roughly half the
-# pattern size.
+# THE ACCELERATION CLAMP. Peak demand at these gains is 0.385 m/s^2, which is
+# UNDER the 0.5 clamp, so nothing is clipped at any point. (An earlier note here
+# warned of 0.93 m/s^2 clipping the first few seconds; that was true of the
+# --rescale 8 / --target-radius 0.45 gains this file used to carry, not of the
+# ones below.) Peak speed is 0.081 m/s -- this is a slow, gentle pattern.
+#
+# SEPARATION -- READ THIS BEFORE FLYING MORE THAN ONE REAL DRONE. All four
+# agents orbit the SAME centre with different radii, so unlike a formation law
+# they do pass close to one another. Measured minimum separation over a 200s
+# flight, transient included:
+#
+#     drone1-drone4   0.354 m   <- essentially constant (min 0.354, max 0.355)
+#     drone2-drone3   0.224 m   <- also near-constant
+#     drone1-drone3   0.118 m
+#     drone2-drone4   0.094 m
+#     drone1-drone2   0.073 m
+#     drone3-drone4   0.020 m   <- a collision, not a near miss
+#
+# So with two real drones the pair MUST be drone1 and drone4. Every other
+# combination puts two aircraft within 12cm of each other. There is no
+# collision-avoidance term in this control law -- it will fly them into each
+# other and report success.
 #
 # CAUTION on beta. At 8.0 it is eight times the damping of the cycle config, and
 # it multiplies the MEASURED velocity -- which mocap_state_node produces by
