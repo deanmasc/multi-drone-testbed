@@ -19,19 +19,32 @@ robots:
     uri: radio://0/20/2M/E7E7E7E7E7
     initial_position: [0.235, -0.132, 0.0158]
     type: cf21
-  # Second airframe. Re-scanned 2026-09-01 and its radio settings had changed:
-  # it now answers on radio://0/65/1M, previously radio://0/50/250K. Identified
-  # by elimination -- a scan with both drones powered returned 0/65/1M and
-  # 0/20/2M, and 0/20/2M is drone_1's unchanged URI.
+  # Second airframe. The scan reported this one as radio://0/50/250K, i.e. a
+  # different channel AND a different datarate from drone_1.
   #
-  # Still a different channel AND datarate from drone_1, so the original
-  # objection stands. It will work as written, but it is not the configuration
-  # you want. One Crazyradio dongle serves both drones and can only be tuned to
-  # one channel/datarate pair at a time -- so with these settings it retunes
+  # 2026-09-01: a DIFFERENT airframe was tried here briefly, on
+  # radio://0/65/1M/E7E7E7E7E7. Do not go back to it without flashing it first.
+  # The radio link was fine -- crazyflie_server reported "[drone_2] is fully
+  # connected!" -- but its firmware was too old:
+  #     Unable to find variable [stateEstimate.x]
+  #     Unable to find variable [supervisor.info]
+  # (supervisor.info only exists in firmware 2023.02 and later.) The failed log
+  # config aborted PARAMETER setup for that drone, so it never received
+  # commander.enHighLevel, stabilizer.estimator or locSrv.extPosStdDev -- while
+  # crazyflie_server still printed "All Crazyflies parameters are initialized".
+  # With the high-level commander off and the Kalman estimator unset it cannot
+  # take off and cannot use VICON. Reverted to the airframe below.
+  #
+  # The tell in the launch log is that every parameter line reads [drone_1] and
+  # none reads [drone_2]. Check for that before assuming a radio fault.
+  #
+  # It will work as written, but it is not the configuration you want. One
+  # Crazyradio dongle serves both drones, and it can only be tuned to one
+  # channel/datarate pair at a time -- so with these settings it retunes
   # between every packet to drone_1 and every packet to drone_2. That costs
   # throughput and, worse, adds jitter to the 25Hz cmdFullState stream that
-  # both drones' position controllers depend on. 1M also carries a packet in
-  # twice the airtime of 2M (the old 250K setting was eight times).
+  # both drones' position controllers depend on. 250K also carries a packet in
+  # eight times the airtime of 2M.
   #
   # The fix is a two-minute job in cfclient (Connect -> Console/Config, or the
   # "Radio Bandwidth"/"Radio Channel"/"Radio Address" fields under Settings):
@@ -51,7 +64,7 @@ robots:
   # what cf_name/mocap_name are set to on the launch command line.
   drone_2:
     enabled: true
-    uri: radio://0/65/1M/E7E7E7E7E7
+    uri: radio://0/50/250K/E7E7E7E7E7
     initial_position: [0.179, 0.219, 0.0158]
     type: cf21
 
