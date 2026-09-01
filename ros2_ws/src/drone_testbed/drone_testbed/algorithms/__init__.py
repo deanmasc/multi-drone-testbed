@@ -6,3 +6,4 @@ from . import print_state
 from . import square
 from . import trochoidal_consensus
 from . import flocking
+from . import coverage

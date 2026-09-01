@@ -1,0 +1,110 @@
+# Voronoi coverage control, hybrid: one or two real drones flying alongside the
+# rest simulated.
+#
+# Same trick as testbed_hybrid.yaml and testbed_flocking_hybrid.yaml -- nothing
+# in the stack knows which drones are real. Every drone publishes /<id>/state;
+# for a real one that comes from mocap_state_node reading VICON, for a virtual
+# one from drone_node integrating the dynamics. algorithm_manager subscribes to
+# all four and cannot tell them apart, so the real drones genuinely react to the
+# virtual ones' Voronoi cells and back.
+#
+# Differs from testbed_coverage.yaml (the desk sim, 5 drones) only in being
+# sized for the lab: bounds match the geofence so a virtual agent cannot chase a
+# centroid somewhere a real one would be aborted for following, the region is
+# pulled in to 1.3 m for margin, and it uses 4 drones so a single real one has
+# three virtual neighbours (Coverage needs >= 3 agents for a real partition).
+
+simulation:
+  dt: 0.1
+  control_rate: 10.0
+  sim_rate: 10.0
+  # Same box the real drones are geofenced to. A virtual agent clamped here
+  # cannot lead a real one out of the capture volume.
+  bounds: 1.5
+
+# PLACEMENT. For a virtual drone the position below is its start. For a real one
+# mocap decides where it actually is -- and because Coverage is reactive
+# (acceleration only, no explicit setpoint) it is lunge-free from anywhere, so
+# exact placement does not matter the way it does for the trajectory algorithms.
+# Put the real drone(s) roughly on their marks and inside the region; the
+# Voronoi law takes it from there.
+#
+# The four start clustered near the origin, biased slightly toward their target
+# quadrants so the assignment is deterministic across runs. From a clump they
+# fan out and settle at the four quadrant centres (+/-0.667, +/-0.667) -- the
+# centroidal Voronoi configuration for a square. Watching the clump become an
+# even partition is the demo.
+#
+# drone1 and drone2 are placed so they settle on OPPOSITE corners (the long
+# 1.884 m diagonal, the furthest-separated pair) and are the two airframes
+# already in config/crazyflies.yaml, so hw_drone / cf_name / mocap_name line up
+# with no cross-mapping.
+drones:
+  - id: "drone1"          # REAL. Settles bottom-left.
+    initial_position: [-0.25, -0.20]
+    initial_velocity: [0.0, 0.0]
+    role: "leader"
+  - id: "drone2"          # REAL when flying two. Settles top-right (opposite drone1).
+    initial_position: [0.22, 0.26]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone3"          # virtual. Settles bottom-right.
+    initial_position: [0.28, -0.24]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone4"          # virtual. Settles top-left.
+    initial_position: [-0.20, 0.30]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+
+# Predicted steady state from the starts above, measured in sim over 200 s:
+#
+#   final positions        (+/-0.667, +/-0.667), one per quadrant
+#   drone1-drone2  1.884   <- long diagonal: the two real drones
+#   drone3-drone4  1.884   <- other diagonal, both virtual
+#   adjacent pairs 1.333
+#   max centroid error at rest   ~0 m  (a true centroidal Voronoi config)
+#
+#   closest approach any pair over the run   0.42 m  (drone2-drone4, real vs
+#       virtual, during the fan-out -- virtual drones have no rotor extent)
+#   closest the two REAL drones ever come    0.66 m  (they start ~0.6 m apart
+#       and only move apart toward opposite corners)
+#   furthest any drone from the origin       1.00 m  -> 0.5 m margin to the
+#       1.5 m geofence, 0.8 m to the 1.8 m abort boundary
+#   settle time    ~6.7 s to max drone speed < 1 cm/s
+#   peak speed     0.31 m/s during the fan-out, near zero once settled
+#   peak accel     saturates the 0.5 clamp briefly during the fan-out only
+#
+# The 2D law has no knowledge of rotor extent, so keep the launch file's
+# altitude stagger (height_step, 0.4 m) when flying two real drones.
+#
+# ONE REAL DRONE: just set hw_drone:=drone1. With three virtual neighbours it
+# gets a real Voronoi cell and settles at its quadrant centre.
+#
+# Launch (after `ros2 launch crazyflie launch.py backend:=cflib` in another
+# terminal):
+#   one real drone
+#     ros2 launch drone_testbed hardware_hybrid.launch.py \
+#         config:=config/testbed_coverage_hybrid.yaml \
+#         hw_drone:=drone1 cf_name:=drone_1 mocap_name:=drone_1
+#   two real drones
+#     ros2 launch drone_testbed hardware_hybrid.launch.py \
+#         config:=config/testbed_coverage_hybrid.yaml \
+#         hw_drone:=drone1,drone2 cf_name:=drone_1,drone_2 \
+#         mocap_name:=drone_1,drone_2
+algorithm:
+  name: "Coverage"
+  params:
+    region_half_width: 1.3   # < geofence (1.5) for margin. Square region Q.
+    gain_kp: 1.0             # pull to cell centroid
+    gain_kd: 1.2             # velocity damping
+    max_accel: 0.5           # matches crazyflie_node's clamp
+    grid_res: 36             # density-integral samples per axis, per cell
+
+    density: "uniform"       # even partition. See testbed_coverage.yaml for the
+                             # gaussian-hotspot (region-of-interest) variant.
+
+    # Cost-history log for the writeup: H(p) across the real+virtual fleet.
+    # "" = timestamped file in the launch directory.
+    # log_file: ""
+    # log_interval: 0.5

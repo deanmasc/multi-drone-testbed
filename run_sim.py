@@ -52,6 +52,8 @@ def resolve_config(name):
     candidate = os.path.join(CONFIG_DIR, name)
     if os.path.exists(candidate):
         return candidate
+    if os.path.exists(candidate + '.yaml'):
+        return candidate + '.yaml'
     available = sorted(
         f for f in os.listdir(CONFIG_DIR) if f.endswith('.yaml')
     )

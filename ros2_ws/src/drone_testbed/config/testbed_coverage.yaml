@@ -1,0 +1,64 @@
+simulation:
+  dt: 0.1
+  control_rate: 10.0
+  sim_rate: 10.0
+  bounds: 2.0
+
+# Five drones started clustered near the origin. Coverage control spreads them
+# out to tile the region -- the whole point is watching them go from a clump to
+# an even partition, so DO start them bunched up.
+#
+# On hardware: mocap places the real drone, but the algorithm is reactive
+# (acceleration only, no explicit setpoint) so any start is lunge-free. With a
+# single real drone the "partition" is the whole region and it just centres
+# itself -- run this in sim or hybrid with 3+ agents for a meaningful demo.
+drones:
+  - id: "drone1"
+    initial_position: [-0.30, -0.20]
+    initial_velocity: [0.0, 0.0]
+    role: "leader"
+  - id: "drone2"
+    initial_position: [0.25, -0.25]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone3"
+    initial_position: [0.30, 0.20]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone4"
+    initial_position: [-0.25, 0.30]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone5"
+    initial_position: [0.05, 0.05]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+
+# Locational cost H(p) = sum_i integral_{V_i} ||q - p_i||^2 phi(q) dq falls
+# monotonically to a local minimum (a centroidal Voronoi configuration). Set
+# log_file to record the H history for the writeup.
+algorithm:
+  name: "Coverage"
+  params:
+    region_half_width: 1.5   # <= geofence. Square region Q is +/- this.
+    gain_kp: 1.0             # pull to cell centroid
+    gain_kd: 1.2             # velocity damping
+    max_accel: 0.5           # matches crazyflie_node's clamp
+    grid_res: 36             # density-integral samples per axis, per cell
+
+    # Uniform density: agents spread to an even (centroidal) partition.
+    density: "uniform"
+
+    # --- Non-uniform coverage demo: uncomment to concentrate the fleet on a
+    # --- region of interest. With hotspot_speed > 0 the bump orbits and the
+    # --- swarm has to keep redistributing to track it.
+    # density: "gaussian"
+    # hotspot_center: [0.0, 0.0]
+    # hotspot_sigma: 0.5
+    # hotspot_speed: 0.15         # rad/s; 0 = stationary
+    # hotspot_orbit_radius: 0.6
+
+    # --- Cost-history log for the report. "" = timestamped file in the launch
+    # --- directory; remove the line entirely for no log.
+    # log_file: ""
+    # log_interval: 0.5
