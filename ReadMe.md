@@ -317,6 +317,48 @@ file wires both through automatically), `trail_seconds` (XY path length, default
 
 ---
 
+## Recording Validation Metrics
+
+`tools/metrics_recorder.py` records the quantity that actually tests each
+algorithm's theorem. A theorem promises a *property*, not a trajectory, so path
+error tests something no paper claimed — see `docs/PROJECT_AIM.md`.
+
+| Algorithm | What it records |
+|---|---|
+| **Flocking** | pairwise spacing vs the target lattice, smallest gap ever reached, velocity spread across the fleet, graph connectivity |
+| **Coverage** | locational cost `H(p)` over time, per-agent centroid distance, and at exit `H` against an offline Lloyd optimum from the same start — the "% of theoretical optimum" number |
+| **Trochoidal** | the two frequencies and their ratio, the two radii, and the envelope decay time constant, recovered by FFT of `z = x + iy` |
+| anything else | positions, velocities and pairwise distances |
+
+Run it in a third terminal alongside the usual two:
+
+```bash
+python3 tools/metrics_recorder.py \
+    --config ros2_ws/src/drone_testbed/config/testbed_flocking_hybrid.yaml
+```
+
+Press Ctrl-C when the flight ends — that is what triggers the analysis. Output
+lands in `logs/<algorithm>_<YYYYmmdd_HHMMSS>.txt`, which holds the config and
+parameters used, one row per sample, and the derived summary as a trailing
+comment block. Rows are streamed to disk as they are computed, so an abort
+mid-flight keeps everything recorded up to that point.
+
+The table loads directly:
+
+```python
+import numpy as np
+data = np.loadtxt('logs/flocking_20260902_144805.txt')   # comments are '#'
+```
+
+Options: `--out-dir` (default `logs/`), `--rate` (samples/s, default 10),
+`--skip` (seconds to exclude from the analysis; by default it auto-detects when
+the fleet starts moving, so the `auto_start_delay` hover is not counted).
+
+The file imports without ROS, so a finished record can be re-analysed on a
+laptop away from the lab.
+
+---
+
 ## Lab Computer Requirements (Windows, VICON PC)
 
 The VICON PC requires no software changes if it is already running VICON Tracker. Confirm:
