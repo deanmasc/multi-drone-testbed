@@ -68,7 +68,13 @@ except ImportError:                         # pragma: no cover
 # Speed below which the fleet counts as not yet flying. Used to find the start
 # of real motion, so the auto_start_delay's worth of stationary rows does not
 # end up in the trochoidal spectrum as a DC-heavy leading edge.
-MOTION_SPEED = 0.02      # m/s
+#
+# 0.02 m/s was too low: VICON noise differentiated into velocity puts brief
+# spikes above that on drones sitting still on the floor, and the first hardware
+# flight consequently "detected motion" at t=0.8s during a 12s pre-flight hold.
+# Require a larger speed, sustained, before believing it.
+MOTION_SPEED = 0.06      # m/s
+MOTION_HOLD = 0.7        # s the fleet must keep moving before the run counts
 
 # A pair closer than this is a genuine near-miss worth flagging in the summary.
 NEAR_MISS = 0.25         # m
@@ -358,9 +364,13 @@ class CoverageMetrics(MetricSet):
             ]
             for i, p in zip(self.ids, opt_pos):
                 out.append(f'      {i:<10s} ({p[0]:+.4f}, {p[1]:+.4f})')
-            out.append('    flight final positions:')
-            for i, p in zip(self.ids, pos_hist[-1]):
-                out.append(f'      {i:<10s} ({p[0]:+.4f}, {p[1]:+.4f})')
+            # Under --analyse only the starting marks are recoverable (the
+            # recorded columns hold centroid distances, not positions), so this
+            # listing is omitted rather than printed with the wrong numbers.
+            if len(pos_hist) > 1:
+                out.append('    flight final positions:')
+                for i, p in zip(self.ids, pos_hist[-1]):
+                    out.append(f'      {i:<10s} ({p[0]:+.4f}, {p[1]:+.4f})')
             out += [
                 '',
                 f'    NOTE grid_res = {self._algo._grid}. The density integral is'
@@ -679,6 +689,7 @@ class MetricsRecorder(Node):
         self._vel = {i: None for i in self.ids}
         self._t0 = None
         self._moving_at = None
+        self._moving_since = None
         self._rows = []
         self._pos_hist = []
         self._aborted = None
@@ -726,11 +737,19 @@ class MetricsRecorder(Node):
         vel = np.array([self._vel[i] for i in self.ids])
 
         # Note when the fleet actually started moving, so the analysis can skip
-        # the pre-flight hover that auto_start_delay leaves at the front.
+        # the pre-flight hold that auto_start_delay leaves at the front. Motion
+        # must persist for MOTION_HOLD before it counts -- a single sample over
+        # the threshold is usually mocap noise on a drone still on the ground.
         if self._moving_at is None:
             if np.linalg.norm(vel, axis=1).max() > MOTION_SPEED:
-                self._moving_at = t
-                self.get_logger().info(f'motion detected at t = {t:.1f}s')
+                if self._moving_since is None:
+                    self._moving_since = t
+                elif t - self._moving_since >= MOTION_HOLD:
+                    self._moving_at = self._moving_since
+                    self.get_logger().info(
+                        f'motion detected at t = {self._moving_at:.1f}s')
+            else:
+                self._moving_since = None
 
         row = self.metrics.row(t, pos, vel)
         if row is None:
@@ -789,11 +808,62 @@ class MetricsRecorder(Node):
         print(f'\n[metrics] written to {self.path}')
 
 
+def reanalyse(path, cfg, t_from, t_to):
+    """Re-score a finished record over a chosen time window.
+
+    A real flight has three phases, and only the middle one is the experiment:
+    a pre-flight hold while auto_start_delay runs out, the flight itself, and a
+    tail after the real drones land while any virtual ones keep going. Scoring
+    across all three reports the landing as a failure to settle and the virtual
+    drones' post-landing wandering as inter-agent distances. Trim to the flight
+    before drawing any conclusion.
+    """
+    data = np.loadtxt(path)
+    if data.ndim == 1:
+        data = data[None, :]
+    ids = [d['id'] for d in cfg['drones']]
+    algo = cfg['algorithm']['name']
+    metrics = make_metrics(algo, ids, cfg['algorithm'].get('params', {}) or {})
+
+    expected = len(metrics.columns())
+    if data.shape[1] != expected:
+        raise SystemExit(
+            f'{path} has {data.shape[1]} columns but {algo} expects {expected} '
+            f'-- is --config the one this run used?')
+
+    t = data[:, 0]
+    lo = t_from if t_from is not None else t[0]
+    hi = t_to if t_to is not None else t[-1]
+    keep = (t >= lo) & (t <= hi)
+    if keep.sum() < 4:
+        raise SystemExit(f'only {int(keep.sum())} samples in [{lo}, {hi}]')
+
+    # Coverage's optimality comparison needs starting positions, which the
+    # recorded columns do not carry. Fall back to the config's marks.
+    pos_hist = [np.array([d['initial_position'] for d in cfg['drones']],
+                         dtype=float)]
+
+    lines = ['', '=' * 74,
+             f'RE-ANALYSIS -- {algo}', '=' * 74, '',
+             f'  file    {path}',
+             f'  window  t = {t[keep][0]:.1f} to {t[keep][-1]:.1f} s '
+             f'({int(keep.sum())} of {len(t)} samples)', '']
+    lines += metrics.summarise(t[keep], data[keep], pos_hist)
+    print('\n'.join(lines))
+
+
 def main():
     ap = argparse.ArgumentParser(
         description='Record per-algorithm validation metrics.')
     ap.add_argument('--config', required=True,
                     help='the same testbed YAML the run uses')
+    ap.add_argument('--analyse', metavar='FILE',
+                    help='re-score an existing record instead of recording; '
+                         'combine with --from / --to to trim to the flight')
+    ap.add_argument('--from', dest='t_from', type=float, default=None,
+                    help='--analyse only: first timestamp to include')
+    ap.add_argument('--to', dest='t_to', type=float, default=None,
+                    help='--analyse only: last timestamp to include')
     ap.add_argument('--out-dir', default='logs',
                     help='directory for the record file (default: logs/)')
     ap.add_argument('--rate', type=float, default=10.0,
@@ -805,6 +875,14 @@ def main():
 
     with open(a.config) as f:
         cfg = yaml.safe_load(f)
+
+    if a.analyse:
+        reanalyse(a.analyse, cfg, a.t_from, a.t_to)
+        return
+
+    if not HAVE_ROS:
+        raise SystemExit('recording needs ROS 2 -- source the workspace first. '
+                         '(--analyse works without it.)')
 
     algo = cfg.get('algorithm', {}).get('name', 'unknown')
     os.makedirs(a.out_dir, exist_ok=True)
