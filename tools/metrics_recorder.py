@@ -52,6 +52,15 @@ from itertools import combinations
 import numpy as np
 import yaml
 
+# Coverage's analysis borrows the algorithm's own Voronoi code, which lives in
+# the package. Off the lab PC nothing has sourced the workspace, so --analyse
+# would fall back to "H not computed" on exactly the machine the re-analysis is
+# meant to happen on. Point at the package directly, as sim_baseline.py does.
+_PKG = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    'ros2_ws', 'src', 'drone_testbed')
+if os.path.isdir(_PKG) and _PKG not in sys.path:
+    sys.path.insert(0, _PKG)
+
 # ROS is only needed to *record*. Guarding the import keeps the metric classes
 # below importable on a machine without ROS, so a finished record file can be
 # re-analysed anywhere -- including the laptop, away from the lab.
@@ -119,6 +128,17 @@ class FlockingMetrics(MetricSet):
         cols += [f'd_{self.ids[a]}_{self.ids[b]}' for a, b in self.pairs]
         cols += ['d_min', 'd_mean', 'lattice_err', 'vel_spread',
                  'n_edges', 'connected']
+        # Per-drone position, appended so every existing column keeps its index.
+        #
+        # Everything above is a *pairwise* quantity, and pairwise metrics are
+        # blind to motion the whole fleet shares: if two drones trace the same
+        # small circle in phase, their separation never changes and the wobble
+        # is invisible. The first hardware flocking run was read that way and
+        # the conclusion was wrong -- the operators could see all four drones
+        # circling on the live plot while the metrics reported a quiet fleet.
+        # Positions are the only thing that cannot hide a common mode, and
+        # they let reanalyse() recompute anything later.
+        cols += [f'{ax}_{i}' for i in self.ids for ax in ('x', 'y')]
         return cols
 
     def row(self, t, pos, vel):
@@ -143,7 +163,8 @@ class FlockingMetrics(MetricSet):
         return ([t] + list(dists) +
                 [float(dists.min()), float(dists.mean()), lattice_err,
                  vel_spread, float(near.sum()),
-                 float(self._connected(near))])
+                 float(self._connected(near))] +
+                [float(v) for v in np.asarray(pos).reshape(-1)])
 
     def _connected(self, near):
         """Union-find over the edges that exist this tick."""
@@ -162,6 +183,132 @@ class FlockingMetrics(MetricSet):
                 if ra != rb:
                     parent[ra] = rb
         return len({find(i) for i in range(n)}) == 1
+
+    # -- wobble --------------------------------------------------------------
+    #
+    # The flock rides a slow orbit set by the gamma leader (tens of seconds per
+    # lap) and, on hardware, carries a much faster ripple on top of it. The two
+    # separate cleanly by scale: subtract a centred moving average long enough
+    # to erase the orbit and short enough to leave the ripple untouched.
+
+    WOBBLE_BAND = (0.3, 6.0)     # s -- ripple periods worth reporting
+    WOBBLE_TRIM = 0.10           # fraction of each end to discard
+    WOBBLE_SOFT = 0.6            # width of the filter's edge ramps
+
+    @staticmethod
+    def _bandpass(t, y, lo, hi, soft=WOBBLE_SOFT):
+        """Keep only periods between lo and hi seconds.
+
+        Two traps here, both of which produced a convincing phantom wobble
+        before they were fixed:
+
+        Subtracting a short moving average is the obvious way to strip the slow
+        orbit, and it is not sharp enough -- a 3 s boxcar still passes ~2% of a
+        25 s orbit, which on a 0.6 m orbit radius is 1.4 cm of fake ripple, the
+        same size as the real thing.
+
+        Replacing it with a brick-wall band still left 0.4 cm, because a sharp
+        spectral cut rings at the ends of the record. Ramping the filter edges
+        smoothly instead drops that to 0.01 cm while recovering a known 3.00 cm
+        circle as 3.00 cm. Trim the ends afterwards regardless.
+        """
+        n = len(y)
+        y = y - np.polyval(np.polyfit(t, y, 1), t)   # endpoints matter to a DFT
+        Y = np.fft.rfft(y)
+        f = np.fft.rfftfreq(n, float(np.median(np.diff(t))))
+        f_lo, f_hi = 1.0 / hi, 1.0 / lo
+        if soft <= 0:
+            gain = ((f >= f_lo) & (f <= f_hi)).astype(float)
+        else:
+            gain = np.ones_like(f)
+            a, b = f_lo / (1 + soft), f_lo * (1 + soft)
+            m = (f > a) & (f < b)
+            gain[f <= a] = 0.0
+            gain[m] = 0.5 * (1 - np.cos(np.pi * (f[m] - a) / (b - a)))
+            a, b = f_hi / (1 + soft), f_hi * (1 + soft)
+            m = (f > a) & (f < b)
+            gain[m] = 0.5 * (1 + np.cos(np.pi * (f[m] - a) / (b - a)))
+            gain[f >= b] = 0.0
+        return np.fft.irfft(Y * gain, n)
+
+    @classmethod
+    def _ellipse(cls, t, wx, wy):
+        """Describe the dominant ripple as a rotating ellipse.
+
+        Any planar oscillation is the sum of two counter-rotating circles, and
+        the FFT of the complex signal x+iy separates them by the sign of the
+        frequency. Their sum is the ellipse's major axis and their difference
+        its minor, so |A+ - A-| / (A+ + A-) is 1 for a clean circle and 0 for a
+        straight line -- which is precisely the question worth asking here: are
+        the drones tracing little circles, or shuffling back and forth?
+        """
+        n = len(wx)
+        if n < 32:
+            return None
+        dt = float(np.median(np.diff(t)))
+        w = np.hanning(n)
+        Z = np.fft.fftshift(np.fft.fft((wx + 1j * wy) * w, 8 * n))
+        f = np.fft.fftshift(np.fft.fftfreq(8 * n, dt))
+        mag = np.abs(Z) / (w.sum() / 2)
+        lo, hi = cls.WOBBLE_BAND
+        mag[(np.abs(f) < 1.0 / hi) | (np.abs(f) > 1.0 / lo)] = 0.0
+        k = int(np.argmax(mag))
+        if mag[k] <= 0.0 or f[k] == 0.0:
+            return None
+        big, small = mag[k], mag[int(np.argmin(np.abs(f + f[k])))]
+        major, minor = big + small, abs(big - small)
+        return {'period': 1.0 / abs(f[k]), 'major': major,
+                'circularity': minor / major if major > 0 else 0.0,
+                'sense': 'CCW' if f[k] > 0 else 'CW'}
+
+    def _wobble_lines(self, t, data, c):
+        """Per-drone ripple, split into what the fleet shares and what it does
+        not. A pairwise metric cannot see the shared part at all."""
+        if any(f'x_{i}' not in c for i in self.ids) or len(t) < 64:
+            return []
+        lo, hi = self.WOBBLE_BAND
+        cut = max(1, int(self.WOBBLE_TRIM * len(t)))
+        sl = slice(cut, len(t) - cut)
+        tt = t[sl]
+
+        xy = np.stack([data[:, [c[f'x_{i}'], c[f'y_{i}']]] for i in self.ids])
+        if not np.isfinite(xy).all():       # an older record, padded with NaN
+            return []
+        band = lambda v: np.stack(                              # noqa: E731
+            [self._bandpass(t, v[:, k], lo, hi)[sl] for k in (0, 1)], axis=1)
+        common = band(xy.mean(axis=0))
+
+        out = ['', f'  WOBBLE (ripple with a period between '
+                   f'{lo:g} s and {hi:g} s)',
+               '    drone            ripple    own    period   shape']
+        for j, i in enumerate(self.ids):
+            w = band(xy[j])
+            e = self._ellipse(tt, w[:, 0], w[:, 1])
+            own = w - common
+            r_tot = float(np.sqrt((w ** 2).sum(axis=1).mean()))
+            r_own = float(np.sqrt((own ** 2).sum(axis=1).mean()))
+            if e is None:
+                out.append(f'    {i:12s} {r_tot*100:7.2f}cm {r_own*100:6.2f}cm'
+                           f'        --   --')
+                continue
+            shape = ('circle' if e['circularity'] > 0.6 else
+                     'ellipse' if e['circularity'] > 0.25 else 'line')
+            out.append(f'    {i:12s} {r_tot*100:7.2f}cm {r_own*100:6.2f}cm '
+                       f'{e["period"]:7.2f}s   {shape} {e["sense"]} '
+                       f'(e={e["circularity"]:.2f})')
+
+        rc = float(np.sqrt((common ** 2).sum(axis=1).mean()))
+        ec = self._ellipse(tt, common[:, 0], common[:, 1])
+        out.append(f'    {"fleet together":12s} {rc*100:7.2f}cm'
+                   + (f'          {ec["period"]:7.2f}s   '
+                      f'e={ec["circularity"]:.2f}' if ec else ''))
+        out.append('')
+        out.append('    "ripple" is each drone\'s own motion, "own" is what is')
+        out.append('    left once the shared fleet-wide ripple is subtracted.')
+        out.append('    A large fleet-together figure means the whole formation')
+        out.append('    is oscillating as one body -- which the pair distances')
+        out.append('    and the velocity spread are both blind to.')
+        return out
 
     def summarise(self, t, data, pos_hist):
         c = {name: i for i, name in enumerate(self.columns())}
@@ -227,6 +374,7 @@ class FlockingMetrics(MetricSet):
         else:
             out.append(f'    still moving at end of run (never settled)')
         out.append(f'    final mean spacing / d    {np.nanmean(data[tail, c["d_mean"]]) / self.d:.3f}')
+        out += self._wobble_lines(t, data, c)
         return out
 
 
@@ -827,9 +975,19 @@ def reanalyse(path, cfg, t_from, t_to):
 
     expected = len(metrics.columns())
     if data.shape[1] != expected:
-        raise SystemExit(
-            f'{path} has {data.shape[1]} columns but {algo} expects {expected} '
-            f'-- is --config the one this run used?')
+        # Records written before per-drone positions were added are still worth
+        # reading -- everything except the wobble section works from the columns
+        # they do have. Pad so the named lookups still line up, and say plainly
+        # which analysis is unavailable rather than refusing the whole file.
+        short = expected - data.shape[1]
+        if short > 0 and short == 2 * len(ids):
+            print(f'[metrics] {os.path.basename(path)} predates per-drone '
+                  f'positions; wobble analysis unavailable for it.')
+            data = np.hstack([data, np.full((len(data), short), np.nan)])
+        else:
+            raise SystemExit(
+                f'{path} has {data.shape[1]} columns but {algo} expects '
+                f'{expected} -- is --config the one this run used?')
 
     t = data[:, 0]
     lo = t_from if t_from is not None else t[0]
