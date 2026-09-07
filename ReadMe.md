@@ -12,7 +12,7 @@ The testbed provides:
 - A physics-accurate 2D simulation for rapid algorithm iteration
 - A pluggable algorithm interface so new strategies can be added without changing the core framework
 - A hardware pipeline connecting real Crazyflie 2.x drones through VICON pose estimation to the same algorithm interface
-- Implemented distributed algorithms: Leader-Follower, Consensus Formation, Trochoidal, Trochoidal Consensus, and Flocking
+- Implemented distributed algorithms: Leader-Follower, Consensus Formation, Randomized Gossip, Trochoidal, Trochoidal Consensus, Flocking and Coverage
 
 ---
 
@@ -95,6 +95,57 @@ virtual leader (the γ-agent).
 
 Config: `config/testbed_flocking.yaml`
 
+### 5. Randomized Gossip Consensus (`GossipConsensus`)
+
+Boyd, Ghosh, Prabhakar & Shah, "Randomized Gossip Algorithms", IEEE Trans.
+Information Theory 52(6) 2006. At each tick of a Poisson clock **one** randomly
+chosen pair wakes, exchanges one message, and both agents replace their value
+with the pairwise midpoint. Nothing is synchronised and nothing is routed.
+
+- **Communication:** one link, one message per round — the sparsest model in the
+  testbed. Against `ConsensusFormation` on the same four drones at 10 Hz that is
+  1 message/second versus 120.
+- **Control law:** gossip runs on an internal estimate `z_i`, and a PD wrapper
+  flies the drone to its slot: `a_i = kp·(z_i + d_i − p_i) − kd·v_i`
+- **Use case:** formation keeping when the radio budget, not the control law, is
+  the binding constraint
+
+It is in the testbed as the **paired comparison against `ConsensusFormation`**:
+identical task, identical vehicle, opposite communication model, so any
+difference is attributable to the message schedule alone. That is the axis this
+ReadMe opens with, and no other algorithm here isolates it.
+
+What it promises, and therefore what `metrics_recorder` scores:
+
+- **The average is preserved exactly.** Every gossip round is doubly stochastic,
+  so the formation centre is fixed by the starting positions — computable before
+  flying, and *independent of the random schedule*. Simulation lands on the
+  predicted centre to 0.9 mm for every seed.
+- **A rate that comes from the graph alone.** Squared disagreement contracts by
+  `λ₂(W̄)` per round, `W̄ = I − L_P/2`. For the complete 4-graph that is exactly
+  2/3, so RMS disagreement decays by 0.8165 per round. It is an *expectation*:
+  a single flight is a single realisation and scatters widely, so compare seeds,
+  not runs.
+
+- **Caveat:** there is no collision term — agents fly straight at their slots and
+  the law will route two of them through the same point if the slots are
+  assigned carelessly. The config's starting marks are chosen so nobody crosses
+  the formation; with the slots rotated one place the same law brings two drones
+  within 3 mm. The randomness is also drawn from one RNG inside
+  `algorithm_manager`, which is a centralised stand-in for what the paper models
+  as *n* independent local clocks.
+
+One measured result already in hand, purely from simulation: average
+preservation survives the PD wrapper **exactly** — centroid drift is 0.00 cm
+whenever nothing saturates — and it is the **acceleration clamp** that breaks
+it, degrading in step as the clamp tightens (0.00 / 1.01 / 2.28 / 3.11 / 5.04 cm
+at `max_accel` 0.50 / 0.20 / 0.12 / 0.08 / 0.05). That is a clean gap-A finding
+in the sense of `docs/PROJECT_AIM.md` §8, and it means any drift measured on
+hardware at 0.5 is *not* saturation and can be attributed elsewhere.
+
+Config: `config/testbed_gossip.yaml`, which carries the measured sizing, the
+separation floor under placement error, and the `gossip_on: position` contrast.
+
 ### Algorithm Parameters
 
 All algorithms are configured via `ros2_ws/src/drone_testbed/config/testbed.yaml`:
@@ -174,11 +225,12 @@ pip3 install numpy matplotlib pyyaml
 python3 run_sim.py --config testbed_flocking.yaml
 python3 run_sim.py --config testbed_fig4.yaml        # TrochoidalConsensus
 python3 run_sim.py --config testbed_trochoidal.yaml
+python3 run_sim.py --config testbed_gossip.yaml      # GossipConsensus
 
 # Or swap the class against the default config
 python3 run_sim.py --algo Trochoidal
-# Options: LeaderFollower | ConsensusFormation | Trochoidal
-#          TrochoidalConsensus | Flocking | Square | PrintState
+# Options: LeaderFollower | ConsensusFormation | GossipConsensus | Trochoidal
+#          TrochoidalConsensus | Flocking | Coverage | Square | PrintState
 ```
 
 `--algo` swaps only the class — it still reads whatever parameters the loaded
@@ -328,6 +380,7 @@ error tests something no paper claimed — see `docs/PROJECT_AIM.md`.
 | **Flocking** | pairwise spacing vs the target lattice, smallest gap ever reached, velocity spread across the fleet, graph connectivity |
 | **Coverage** | locational cost `H(p)` over time, per-agent centroid distance, and at exit `H` against an offline Lloyd optimum from the same start — the "% of theoretical optimum" number |
 | **Trochoidal** | the two frequencies and their ratio, the two radii, and the envelope decay time constant, recovered by FFT of `z = x + iy` |
+| **Gossip** | fleet centroid drift (the average-preservation promise, which every round keeps exactly, so drift measures only what the physical layer cost) and the RMS disagreement, whose per-round decay is scored against `λ₂(W̄)` — a number that comes from the graph alone |
 | anything else | positions, velocities and pairwise distances |
 
 Run it in a third terminal alongside the usual two:
@@ -390,6 +443,7 @@ multi-drone-testbed/
     │   │   ├── registry.py            # @register_algorithm decorator + lookup
     │   │   ├── leader_follower.py     # Leader-Follower implementation
     │   │   ├── consensus.py           # Consensus Formation implementation
+    │   │   ├── gossip_consensus.py    # Randomized gossip implementation
     │   │   └── trochoidal.py          # Trochoidal implementation
     │   ├── dynamics/
     │   │   └── double_integrator.py   # 2D physics model (A, B matrices + step)

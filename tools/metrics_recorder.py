@@ -15,6 +15,12 @@ different for every algorithm. See docs/PROJECT_AIM.md section 7.
               offline Lloyd iteration converges to from the same start. That
               ratio is the "what optimality did hardware achieve" number.
 
+  Gossip      the fleet centroid, whose invariance IS the theorem (every
+              gossip round preserves the average exactly, so drift measures
+              only what the physical layer cost), and the RMS disagreement,
+              whose per-round decay is scored against lambda_2 of the expected
+              gossip matrix -- a number that comes from the graph alone.
+
   Trochoidal  the two frequencies, their ratio, and the two radii, recovered
               at exit by FFT of the complex signal z = x + iy (a trochoid is a
               sum of two complex exponentials, so the spectrum has exactly two
@@ -737,6 +743,206 @@ class TrochoidalMetrics(MetricSet):
         return out
 
 
+class GossipMetrics(MetricSet):
+    """The two things randomized gossip actually promises.
+
+    Boyd et al. promise a rate and an invariant, and neither is a trajectory:
+
+      1. The average of the gossiped values is preserved EXACTLY, by every
+         round, for every realisation of the randomness. Here the gossiped
+         value is the offset-corrected position u_i = p_i - d_i, so the promise
+         is that the fleet centroid mean(u_i) never moves. Its drift is
+         therefore a direct measurement of how much the physical layer costs --
+         and it should be zero in simulation whenever nothing saturates, which
+         makes any nonzero hardware figure attributable rather than mysterious.
+
+      2. Squared disagreement contracts by lambda_2(W_bar) per gossip round,
+         where W_bar = I - L_P/2 is built from the graph alone. So the RMS
+         disagreement recorded below should decay with per-round factor
+         sqrt(lambda_2). That is an EXPECTATION over the random schedule; a
+         single flight is a single realisation and scatters widely around it,
+         so the comparison is only meaningful over several runs.
+    """
+
+    def __init__(self, ids, params):
+        super().__init__(ids, params)
+        self.rate = float(params.get('gossip_rate', 0.5))
+        self.mode = str(params.get('gossip_on', 'estimate')).lower()
+        self.offsets = None
+        self.predicted = None
+        self.n_edges = None
+        try:
+            from drone_testbed.algorithms.gossip_consensus import (
+                build_edges, contraction_factor, resolve_offsets)
+            self.offsets = resolve_offsets(list(ids), dict(params))
+            edges, probs = build_edges(list(ids), params.get('adjacency'))
+            self.n_edges = len(edges)
+            self.predicted = contraction_factor(len(ids), edges, probs)
+        except Exception as exc:            # noqa: BLE001 -- reported, not raised
+            print(f'[metrics] gossip helpers unavailable ({exc}); the rate '
+                  f'prediction will be omitted and offsets treated as zero.',
+                  file=sys.stderr)
+
+    def _offset(self, drone_id):
+        if self.offsets is None:
+            return np.zeros(2)
+        return self.offsets.get(drone_id, np.zeros(2))
+
+    def columns(self):
+        cols = ['t']
+        cols += [f'{ax}_{i}' for i in self.ids for ax in ('x', 'y')]
+        cols += ['disagreement', 'centroid_x', 'centroid_y', 'd_min']
+        return cols
+
+    def _corrected(self, pos):
+        """u_i = p_i - d_i, the quantity gossip is averaging."""
+        return np.array([pos[k] - self._offset(i)
+                         for k, i in enumerate(self.ids)])
+
+    def row(self, t, pos, vel):
+        u = self._corrected(pos)
+        centroid = u.mean(axis=0)
+        disagreement = float(np.sqrt(((u - centroid) ** 2).sum(axis=1).mean()))
+        dists = [np.linalg.norm(pos[a] - pos[b]) for a, b in self.pairs]
+        return ([t] + [float(v) for v in np.asarray(pos).reshape(-1)] +
+                [disagreement, float(centroid[0]), float(centroid[1]),
+                 float(min(dists)) if dists else float('nan')])
+
+    def _fit_rate(self, t, delta):
+        """Per-round RMS decay factor, and how many rounds the fit spans.
+
+        Two windowing traps, both of which move the answer by tens of percent:
+
+        Include the tail past convergence and the curve is flat there, biasing
+        the fit toward 1 -- a run that converged perfectly reads as "slower
+        than predicted". Include the plateau before the first round fires and
+        it biases the same way. So the fit runs from the moment the
+        disagreement actually starts falling to the moment it hits the floor.
+
+        Even then, this is a staircase and not an exponential: it only moves
+        when a pair wakes. Fitting a line through six steps is a weak estimate
+        however carefully it is windowed, which is why the round count is
+        returned alongside -- it is what tells the reader how much to trust the
+        number.
+        """
+        if self.rate <= 0 or len(delta) == 0 or delta[0] <= 0:
+            return None
+        good = (delta > 0.02 * delta[0]) & (delta < 0.99 * delta[0]) & (delta > 1e-9)
+        if good.sum() < 10:
+            return None
+        span = float(t[good][-1] - t[good][0])
+        slope = float(np.polyfit(t[good], np.log(delta[good]), 1)[0])
+        if slope >= 0.0:
+            return None
+        return math.exp(slope / self.rate), span * self.rate
+
+    def summarise(self, t, data, pos_hist):
+        c = {name: i for i, name in enumerate(self.columns())}
+        delta = data[:, c['disagreement']]
+        centroid = data[:, [c['centroid_x'], c['centroid_y']]]
+        drift = np.linalg.norm(centroid - centroid[0], axis=1)
+        d_min = data[:, c['d_min']]
+        worst = int(np.argmin(d_min))
+
+        out = [
+            "GOSSIP -- did the theorem's promises hold?",
+            '',
+            f'  gossip rate                 {self.rate:g} rounds/s',
+            f'  gossiped quantity           the {self.mode}',
+            f'  rounds this run (expected)  {self.rate * (t[-1] - t[0]):.0f}',
+            '',
+            '  AVERAGE PRESERVATION (every gossip round preserves it exactly,',
+            '                        so any drift here is the physical layer)',
+            f'    final centroid drift      {drift[-1]:.4f} m',
+            # Timestamping the worst drift is only informative if there was
+            # any; on a clean simulated run it is exactly zero and argmax
+            # would report an arbitrary sample.
+            (f'    worst during run          {drift.max():.4f} m  '
+             f'at t = {t[int(np.argmax(drift))]:.1f} s' if drift.max() > 1e-9
+             else f'    worst during run          {drift.max():.4f} m  '
+                  f'(never moved)'),
+            f'    centroid start            ({centroid[0, 0]:+.4f}, '
+            f'{centroid[0, 1]:+.4f})',
+            f'    centroid end              ({centroid[-1, 0]:+.4f}, '
+            f'{centroid[-1, 1]:+.4f})',
+        ]
+        if self.mode == 'position':
+            out.append('    (gossip_on=position does NOT preserve the average --'
+                       ' the vehicle')
+            out.append('     never arrives before the next round. Drift is'
+                       ' expected here.)')
+
+        out += [
+            '',
+            '  CONSENSUS RATE',
+            f'    initial disagreement      {delta[0]:.4f} m rms',
+            f'    final disagreement        {delta[-1]:.4f} m rms',
+        ]
+        target = 0.05 * delta[0]
+        above = np.where(delta > target)[0]
+        if len(above) == 0:
+            out.append('    reached 5% of initial     already there at the '
+                       'first sample')
+        elif above[-1] < len(t) - 1:
+            out.append(f'    reached 5% of initial     t = {t[above[-1] + 1]:.1f} s')
+        else:
+            out.append('    reached 5% of initial     never (still converging '
+                       'at end of run)')
+
+        measured = self._fit_rate(t, delta)
+        if self.predicted is not None:
+            pred_rms = math.sqrt(max(self.predicted, 0.0))
+            out += [
+                '',
+                f'  PREDICTION FROM THE GRAPH ({self.n_edges} edges)',
+                f'    lambda_2(W_bar)           {self.predicted:.4f}  '
+                f'(squared disagreement, per round)',
+                f'    predicted RMS per round   {pred_rms:.4f}',
+            ]
+            if measured is None:
+                out.append('    measured RMS per round    not fittable (too '
+                           'few decaying samples)')
+            else:
+                factor, rounds_spanned = measured
+                # pred_rms is 0 for a two-agent graph, where one round is
+                # exact consensus and there is no rate to be off by.
+                versus = (f'{100.0 * (factor - pred_rms) / pred_rms:+.1f}% '
+                          f'vs prediction' if pred_rms > 1e-9
+                          else 'no rate predicted for this graph')
+                out.append(f'    measured RMS per round    {factor:.4f}  '
+                           f'({versus})')
+                out.append(f'    fitted over               '
+                           f'{rounds_spanned:.0f} gossip rounds')
+                out += [
+                    '',
+                    '    lambda_2 is an EXPECTATION over the random schedule,'
+                    ' and one flight is',
+                    '    one realisation. Across 30 simulated seeds of'
+                    ' testbed_gossip.yaml the',
+                    '    fitted figure had a standard deviation near 10% but'
+                    ' a full range of',
+                    '    0.46 to 0.90 against a prediction of 0.82 -- so even'
+                    ' a large deviation',
+                    '    here means nothing on its own. Fly several seeds'
+                    ' before concluding',
+                    '    that the hardware changed the rate.',
+                ]
+        elif measured is not None:
+            out += ['', f'  measured RMS decay per round  {measured[0]:.4f}  '
+                        f'over {measured[1]:.0f} rounds '
+                        f'(no prediction available)']
+
+        out += [
+            '',
+            '  SEPARATION (this law has no collision term)',
+            f'    smallest gap ever         {d_min[worst]:.4f} m  '
+            f'at t = {t[worst]:.1f} s',
+            f'    ticks under {NEAR_MISS:.2f} m         '
+            f'{int((d_min < NEAR_MISS).sum())} of {len(t)}',
+        ]
+        return out
+
+
 class GenericMetrics(MetricSet):
     """Fallback: positions and pairwise distances, for algorithms without a
     dedicated metric set. Enough to reconstruct most things after the fact."""
@@ -777,6 +983,8 @@ def make_metrics(algo_name, ids, params):
         return CoverageMetrics(ids, params)
     if 'trochoidal' in key:
         return TrochoidalMetrics(ids, params)
+    if 'gossip' in key:
+        return GossipMetrics(ids, params)
     return GenericMetrics(ids, params)
 
 

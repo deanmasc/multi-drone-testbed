@@ -1,0 +1,207 @@
+# Randomized gossip consensus (Boyd, Ghosh, Prabhakar & Shah, IEEE TIT 52(6)
+# 2006) driving a four-drone square formation.
+#
+# This config is the paired comparison against testbed.yaml's
+# ConsensusFormation. The task is identical -- reach a square formation -- and
+# so is the vehicle. The only thing that changes is the COMMUNICATION MODEL:
+#
+#   ConsensusFormation   every agent reads every neighbour every control tick.
+#                        At 10 Hz over 4 agents that is 120 messages/second.
+#   GossipConsensus      one randomly chosen PAIR exchanges one message per
+#                        round. At gossip_rate 0.5 that is 1 message/second.
+#
+# Two orders of magnitude less radio for the same formation. What it costs is
+# what this config is for measuring.
+#
+# ---------------------------------------------------------------------------
+# WHAT THE THEOREM PREDICTS, BEFORE FLYING
+#
+# The adjacency block is omitted, so the graph is complete: all 6 pairs equally
+# likely. For a complete graph on n agents lambda_2(W_bar) = 1 - 1/(n-1)
+# exactly, so here
+#
+#     lambda_2 = 2/3            squared disagreement contracts by this per round
+#     sqrt(lambda_2) = 0.8165   so RMS disagreement decays by this per round
+#     -> 4.9 rounds per e-fold, 14.7 rounds to reach 5%
+#
+# MEASURED in simulation over 30 seeds: 0.782 +/- 0.073 per round. The
+# prediction is an expectation and one flight is one realisation, so a single
+# run scatters widely -- judge it over seeds, never over one flight.
+#
+# The average is preserved EXACTLY by every gossip round, so the formation
+# centre is fixed by the starting positions alone: centre = mean(p_i - d_i).
+# From the marks below that is (-0.0250, +0.0500), giving final positions
+#
+#     drone1  [-0.3750, +0.4000]        drone2  [+0.3250, +0.4000]
+#     drone4  [-0.3750, -0.3000]        drone3  [+0.3250, -0.3000]
+#
+# Simulation lands on those to 0.9 mm, identically for every seed. That is the
+# strong claim to test on hardware: the endpoint does NOT depend on the random
+# message schedule.
+#
+# ---------------------------------------------------------------------------
+# THE ONE PLACE THE THEOREM BREAKS, AND WHY IT IS WORTH REPORTING
+#
+# Average preservation survives the PD wrapper exactly. Summing the control law
+# over all agents gives sum(a_i) = kp*n*(mean_z - mean_u) - kd*n*mean_v, and
+# since mean_z is invariant and mean_u starts equal to it, the physical
+# centroid never moves at all -- as long as the law stays linear.
+#
+# The acceleration clamp is nonlinear, and it is precisely what breaks it.
+# Measured, 20 seeds each, varying ONLY max_accel:
+#
+#     max_accel   anything clipped?   worst centroid drift
+#        0.50            no                  0.00 cm
+#        0.20            yes                 1.01 cm
+#        0.12            yes                 2.28 cm
+#        0.08            yes                 3.11 cm
+#        0.05            yes                 5.04 cm
+#
+# This is a clean gap-A result in the sense of PROJECT_AIM.md s8: no hardware
+# involved, one simplification varied, the promised property degrading in step
+# with it. Saturation is load-bearing for this algorithm's exact invariant.
+# It also means any centroid drift measured on hardware at max_accel 0.5 is NOT
+# this -- nothing clips here, so drift on a real flight is estimation error or
+# tracking lag, and can be attributed as such.
+#
+# ---------------------------------------------------------------------------
+# SIZING -- all measured by running this file, not estimated. 40 seeds, 90 s.
+#
+#   peak acceleration demanded   0.475 m/s^2   UNDER the 0.5 clamp; nothing is
+#                                clipped at any point in any seed
+#   peak speed                   0.306 m/s     well under the 0.7 clamp
+#   furthest from the origin     1.063 m       0.44 m of margin to the 1.5 m
+#                                geofence, 0.74 m to the 1.8 m abort
+#   gossip rounds in 90 s        26 to 53 (mean 43.7, expected 45)
+#
+# The starts are chosen so each drone's slot lies in the quadrant it starts in.
+# This matters more than it looks: with the slots rotated one place round --
+# every drone crossing the formation to reach the far side -- the same law
+# brought two drones within 3 mm of each other and held the acceleration clamp
+# saturated for the first 18 s. There is NO collision term in this control law.
+# It will fly them through each other and report success.
+#
+# SEPARATION. Closest approach between any two drones, over the whole run:
+#
+#     nominal placement                   0.308 m   (40 seeds)
+#     up to +/-5 cm placement error       0.323 m   (40 seeds)
+#     up to +/-8 cm placement error       0.325 m   (40 seeds)
+#     up to +/-15 cm placement error      0.289 m   (40 seeds)
+#
+# Not one of those 160 runs came under 0.25 m. The floor is therefore about
+# 0.29 m, which is above the near-miss threshold but tighter than flocking's
+# 0.48 m -- the closest approach happens mid-transit, not at the settled
+# formation (where the sides are 0.70 m and the diagonals 0.99 m). Keep the
+# launch file's altitude stagger.
+#
+# HOW LONG TO FLY. Time for the disagreement to fall under 5% of its initial
+# value: 24.7 s on average, but 8.6 s to 49.1 s across seeds. That spread is
+# the algorithm, not noise -- an unlucky schedule really does take five times
+# as long. Use flight_duration:=90.0 so even a slow draw finishes and settles.
+#
+# SEED. Fixed at 0 on purpose. An unseeded randomised algorithm cannot be
+# compared between simulation and hardware, because the two runs would not be
+# running the same experiment. Change it deliberately, record which value was
+# used, and fly several.
+
+simulation:
+  dt: 0.1
+  control_rate: 10.0
+  sim_rate: 10.0
+  # Same box the real drones are geofenced to, so this config can be flown
+  # hybrid without re-sizing anything.
+  bounds: 1.5
+
+# PLACE THE REAL DRONE(S) ON THESE MARKS. Unlike the reactive algorithms, the
+# starting positions here are not merely a starting point -- they DETERMINE the
+# formation centre, exactly and forever. Misplacing a drone by 10 cm moves the
+# whole formation by 2.5 cm and there is nothing in the law to correct it.
+#
+# Each drone starts in the quadrant of its own slot. See SEPARATION above for
+# why that is not cosmetic.
+drones:
+  - id: "drone1"          # upper-left
+    initial_position: [-0.75, 0.55]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone2"          # upper-right
+    initial_position: [0.70, 0.80]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone3"          # lower-right
+    initial_position: [0.60, -0.70]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone4"          # lower-left
+    initial_position: [-0.65, -0.45]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+
+algorithm:
+  name: "GossipConsensus"
+  params:
+    # THE parameter of interest: the message budget, in exchanges per second.
+    # Deliberately far below control_rate -- at one round per control tick the
+    # thing converges in about a second and the asynchrony that is the whole
+    # point of the algorithm is invisible. At 0.5 Hz you can watch exactly two
+    # drones move at a time.
+    gossip_rate: 0.5
+    poisson_clock: true    # the paper's asynchronous clock; false = evenly
+                           # spaced rounds at the same mean rate
+    seed: 0                # null for a fresh draw -- see SEED above
+    gossip_on: "estimate"  # 'position' gossips the physical state instead;
+                           # see the note below
+
+    # The PD wrapper. These gains are ours, not the paper's -- gossip is a
+    # discrete map on a value and says nothing about how a vehicle should chase
+    # it. Same adaptation as coverage.py's -kd*v, and it deserves the same
+    # scrutiny (PROJECT_AIM.md s5b).
+    gain_kp: 1.0
+    gain_kd: 1.2
+    max_accel: 0.5         # matches crazyflie_node's clamp
+
+    # No `adjacency` block: the graph is complete, every pair equally likely.
+    # Add one to starve the graph and watch lambda_2 degrade. Over these four
+    # agents, rounds needed to reach 5% disagreement:
+    #     complete (6 edges)   sqrt(lambda_2) 0.8165    14.8 rounds
+    #     cycle    (4 edges)   sqrt(lambda_2) 0.8660    20.8 rounds
+    #     path     (3 edges)   sqrt(lambda_2) 0.9499    58.3 rounds
+    # Halving the edges costs four times the messages. That is the sparse-radio
+    # experiment, and it is a config change:
+    #   adjacency:
+    #     drone1: ["drone2"]
+    #     drone2: ["drone3"]
+    #     drone3: ["drone4"]
+
+    # A 0.70 m square. Slots are assigned so nobody crosses the formation.
+    target_offsets:
+      drone1: [-0.35, 0.35]
+      drone2: [0.35, 0.35]
+      drone3: [0.35, -0.35]
+      drone4: [-0.35, -0.35]
+
+# ---------------------------------------------------------------------------
+# gossip_on: the single- vs double-integrator question, as a config switch
+#
+# 'estimate' (above) runs the paper's law on a software variable that CAN jump
+# to the midpoint, and flies the drone after it. The theorem's object is then
+# satisfied exactly by construction, and any failure is the vehicle's.
+#
+# 'position' gossips the physical position instead: the woken pair is commanded
+# to the midpoint of where they actually ARE. This is the more literal reading
+# of the paper, and it is strictly worse -- measured over 30 seeds:
+#
+#                        RMS decay/round   final centroid drift   spread of the
+#                                                                 final centre
+#                                                                 across seeds
+#     estimate               0.782            0.00 cm                0.00 cm
+#     position               0.776            5.50 cm (15.7 max)    14.72 cm
+#
+# It converges at the same RATE. What it loses is the invariant: because a
+# drone never quite arrives before the next round, the average is not preserved
+# and the fleet settles wherever the random schedule happened to leave it. The
+# endpoint becomes a function of the RNG rather than of the initial positions.
+#
+# That contrast is the experiment, and it is the s9.1 question -- does it
+# matter whether the gossiped quantity is a first-order value or a second-order
+# vehicle state -- asked in a form that has a number attached.
