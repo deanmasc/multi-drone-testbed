@@ -66,7 +66,7 @@ def run(cfg, duration, rate=None):
 
         pos = np.array([state[i][:2] for i in ids])
         vel = np.array([state[i][2:] for i in ids])
-        row = metrics.row(t, pos, vel)
+        row = metrics.full_row(t, pos, vel)   # z is nan: no hardware here
         if row is not None:
             ts.append(t)
             rows.append(row)
@@ -97,7 +97,7 @@ def main():
     path = os.path.join(a.out_dir, f'{algo.lower()}_sim_{stamp}.txt')
 
     with open(path, 'w') as fh:
-        M.write_header(fh, cfg, algo, ids, metrics.columns(), rate)
+        M.write_header(fh, cfg, algo, ids, metrics.all_columns(), rate)
         for row in data:
             fh.write(M.format_row(row) + '\n')
 

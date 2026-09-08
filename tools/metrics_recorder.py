@@ -73,6 +73,17 @@ except ImportError:                         # pragma: no cover
     HAVE_ROS = False
     Node = object
 
+# Altitude comes straight from mocap rather than from /<id>/state, which only
+# carries [x, y, vx, vy]. Separate guard: the interface package ships with
+# Crazyswarm2 and is absent on a laptop, and a missing z is not a reason to
+# refuse to record everything else.
+try:
+    from motion_capture_tracking_interfaces.msg import NamedPoseArray
+    from rclpy.qos import qos_profile_sensor_data
+    HAVE_MOCAP_MSG = True
+except ImportError:                         # pragma: no cover
+    HAVE_MOCAP_MSG = False
+
 
 # Speed below which the fleet counts as not yet flying. Used to find the start
 # of real motion, so the auto_start_delay's worth of stationary rows does not
@@ -113,6 +124,62 @@ class MetricSet:
 
     def summarise(self, t, data, pos_hist):
         return []
+
+    # -- altitude ----------------------------------------------------------
+    #
+    # All three control laws are planar: z is pinned at the takeoff height by
+    # crazyflie_node and never reaches the algorithm, which sees only
+    # [x, y, vx, vy]. That makes altitude invisible in every metric here -- and
+    # a drone quietly sinking out of its hover is exactly the kind of fault
+    # that then gets blamed on the control law. Recorded for every algorithm,
+    # appended last so no existing column changes index.
+
+    def all_columns(self):
+        return self.columns() + [f'z_{i}' for i in self.ids]
+
+    def full_row(self, t, pos, vel, z=None):
+        r = self.row(t, pos, vel)
+        if r is None:
+            return None
+        n = len(self.ids)
+        if z is None:
+            zs = [float('nan')] * n
+        else:
+            zs = [float('nan') if v is None else float(v) for v in z]
+        return list(r) + zs
+
+    def altitude_lines(self, t, data):
+        """Did every drone hold the height it took off at?"""
+        base = len(self.columns())
+        if data.shape[1] < base + len(self.ids):
+            return []
+        z = data[:, base:base + len(self.ids)]
+        if not np.isfinite(z).any():
+            return []                       # simulated run, or no mocap z
+
+        out = ['', '  ALTITUDE (z from mocap; the algorithms never see it)',
+               '    drone            held    drift    lowest   sink rate']
+        for k, i in enumerate(self.ids):
+            col = z[:, k]
+            ok = np.isfinite(col)
+            if ok.sum() < 4:
+                out.append(f'    {i:12s}      --  (no mocap z)')
+                continue
+            tt, zz = t[ok], col[ok]
+            # Fit a line: a steady sink shows up here even when the noise on
+            # any single sample is larger than the drift itself.
+            slope = float(np.polyfit(tt, zz, 1)[0])
+            drift = float(zz[-1] - zz[0])
+            flag = '  <-- SINKING' if slope < -0.005 else ''
+            out.append(f'    {i:12s} {np.median(zz):6.3f}m '
+                       f'{drift:+7.3f}m {zz.min():8.3f}m '
+                       f'{slope * 1000:+7.1f} mm/s{flag}')
+        out.append('')
+        out.append('    "held" is the median height, "drift" is last minus first.')
+        out.append('    A negative sink rate means the drone lost altitude over')
+        out.append('    the run -- the commanded z is constant, so that is the')
+        out.append('    onboard controller failing to hold it, not the algorithm.')
+        return out
 
 
 class FlockingMetrics(MetricSet):
@@ -835,6 +902,15 @@ class MetricsRecorder(Node):
 
         self._pos = {i: None for i in self.ids}
         self._vel = {i: None for i in self.ids}
+        self._z = {i: None for i in self.ids}
+        # /poses names the VICON rigid bodies (drone_1), the testbed names the
+        # logical agents (drone1). Nothing publishes the mapping, so accept
+        # either spelling rather than making the operator pass a third list
+        # that has to stay in step with cf_name and mocap_name.
+        self._z_alias = {}
+        for i in self.ids:
+            for name in {i, i.replace('drone', 'drone_'), i.replace('_', '')}:
+                self._z_alias[name] = i
         self._t0 = None
         self._moving_at = None
         self._moving_since = None
@@ -848,6 +924,13 @@ class MetricsRecorder(Node):
                 Float64MultiArray, f'/{i}/state',
                 lambda msg, did=i: self._state_cb(did, msg), 10)
         self.create_subscription(String, '/sim/abort', self._abort_cb, 10)
+        if HAVE_MOCAP_MSG:
+            self.create_subscription(NamedPoseArray, '/poses', self._poses_cb,
+                                     qos_profile_sensor_data)
+        else:
+            self.get_logger().warn(
+                'motion_capture_tracking_interfaces not importable -- '
+                'z will be recorded as nan')
 
         self._fh = open(path, 'w')
         self._write_header(cfg, rate)
@@ -860,13 +943,19 @@ class MetricsRecorder(Node):
 
     def _write_header(self, cfg, rate):
         write_header(self._fh, cfg, self.algo, self.ids,
-                     self.metrics.columns(), rate)
+                     self.metrics.all_columns(), rate)
 
     def _state_cb(self, drone_id, msg):
         if len(msg.data) < 4:
             return
         self._pos[drone_id] = np.array(msg.data[0:2], dtype=float)
         self._vel[drone_id] = np.array(msg.data[2:4], dtype=float)
+
+    def _poses_cb(self, msg):
+        for named in msg.poses:
+            did = self._z_alias.get(named.name)
+            if did is not None:
+                self._z[did] = float(named.pose.position.z)
 
     def _abort_cb(self, msg):
         if self._aborted is None:
@@ -899,7 +988,8 @@ class MetricsRecorder(Node):
             else:
                 self._moving_since = None
 
-        row = self.metrics.row(t, pos, vel)
+        row = self.metrics.full_row(t, pos, vel,
+                                    [self._z[i] for i in self.ids])
         if row is None:
             return
         self._rows.append(row)
@@ -947,6 +1037,10 @@ class MetricsRecorder(Node):
                 [self._pos_hist[i] for i in np.where(keep)[0]])
         except Exception as exc:            # noqa: BLE001
             lines.append(f'  analysis failed: {exc}')
+        try:
+            lines += self.metrics.altitude_lines(t[keep], data[keep])
+        except Exception as exc:            # noqa: BLE001
+            lines.append(f'  altitude analysis failed: {exc}')
 
         text = '\n'.join('# ' + ln if ln else '#' for ln in lines) + '\n'
         self._fh.write(text)
@@ -973,16 +1067,21 @@ def reanalyse(path, cfg, t_from, t_to):
     algo = cfg['algorithm']['name']
     metrics = make_metrics(algo, ids, cfg['algorithm'].get('params', {}) or {})
 
-    expected = len(metrics.columns())
+    expected = len(metrics.all_columns())
     if data.shape[1] != expected:
-        # Records written before per-drone positions were added are still worth
-        # reading -- everything except the wobble section works from the columns
-        # they do have. Pad so the named lookups still line up, and say plainly
-        # which analysis is unavailable rather than refusing the whole file.
+        # Older records are still worth reading. The columns have only ever
+        # grown at the end -- per-drone x/y, then z -- so a file short by whole
+        # per-drone blocks is an earlier layout, not a mismatched config. Pad
+        # with nan so the named lookups still line up, and name the analysis
+        # that is unavailable instead of refusing the whole file.
         short = expected - data.shape[1]
-        if short > 0 and short == 2 * len(ids):
-            print(f'[metrics] {os.path.basename(path)} predates per-drone '
-                  f'positions; wobble analysis unavailable for it.')
+        n = len(ids)
+        if short > 0 and short % n == 0 and short <= 3 * n:
+            missing = ['altitude'] if short == n else (
+                ['wobble'] if short == 2 * n else ['wobble', 'altitude'])
+            print(f'[metrics] {os.path.basename(path)} predates the '
+                  f'{" and ".join(missing)} column(s); that analysis is '
+                  f'unavailable for it.')
             data = np.hstack([data, np.full((len(data), short), np.nan)])
         else:
             raise SystemExit(
@@ -1007,6 +1106,7 @@ def reanalyse(path, cfg, t_from, t_to):
              f'  window  t = {t[keep][0]:.1f} to {t[keep][-1]:.1f} s '
              f'({int(keep.sum())} of {len(t)} samples)', '']
     lines += metrics.summarise(t[keep], data[keep], pos_hist)
+    lines += metrics.altitude_lines(t[keep], data[keep])
     print('\n'.join(lines))
 
 
