@@ -1,0 +1,38 @@
+# Simulation or hybrid launch: one independent controller per drone.
+simulation:
+  dt: 0.05
+  control_rate: 20.0
+  sim_rate: 20.0
+  bounds: 1.5
+drones:
+  - id: drone1
+    initial_position: [0.65, 0.0]
+    initial_velocity: [0.0, 0.0]
+  - id: drone2
+    initial_position: [0.0, 0.65]
+    initial_velocity: [0.0, 0.0]
+  - id: drone3
+    initial_position: [-0.65, 0.0]
+    initial_velocity: [0.0, 0.0]
+  - id: drone4
+    initial_position: [0.0, -0.65]
+    initial_velocity: [0.0, 0.0]
+algorithm:
+  name: KuramotoFormation
+  params:
+    center: [0.0, 0.0]
+    radius: 0.65
+    amplitude: 0.15
+    omega: 0.5                  # radians/second; period about 12.6 seconds
+    phase_gain: 1.0
+    position_gain: 1.0
+    formation_gain: 0.8
+    velocity_gain: 2.0
+    max_accel: 0.5              # Euclidean norm, m/s^2
+    neighbor_timeout: 0.5      # local receipt age, seconds
+    initial_phases: {drone1: 0.0, drone2: 0.2, drone3: 0.4, drone4: 0.6}
+    adjacency:
+      drone1: [drone2, drone4]
+      drone2: [drone1, drone3]
+      drone3: [drone2, drone4]
+      drone4: [drone1, drone3]

@@ -12,6 +12,7 @@ import yaml
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
+from drone_testbed.utils.controller_launch import controller_nodes
 from launch_ros.actions import Node
 
 
@@ -50,15 +51,7 @@ def _launch_setup(context):
         ))
 
     # Algorithm manager
-    nodes.append(Node(
-        package='drone_testbed',
-        executable='algorithm_manager',
-        name='algorithm_manager',
-        parameters=[{
-            'config_file': config_path,
-        }],
-        output='screen',
-    ))
+    nodes.extend(controller_nodes(config, config_path))
 
     # Visualizer
     nodes.append(Node(

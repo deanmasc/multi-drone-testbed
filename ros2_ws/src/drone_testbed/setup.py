@@ -23,6 +23,8 @@ setup(
     entry_points={
         'console_scripts': [
             'drone_node = drone_testbed.drone_node:main',
+            'kuramoto_controller = drone_testbed.kuramoto_node:main',
+            'formation_lifecycle = drone_testbed.kuramoto_node:lifecycle_main',
             'algorithm_manager = drone_testbed.algorithm_manager:main',
             'sim_visualizer = drone_testbed.sim_visualizer:main',
             'live_visualizer = drone_testbed.live_visualizer:main',

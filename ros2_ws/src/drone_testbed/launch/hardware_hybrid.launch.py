@@ -50,6 +50,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
+from drone_testbed.utils.controller_launch import controller_nodes
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -172,17 +173,7 @@ def _launch_setup(context):
         ))
 
     # --- shared ----------------------------------------------------------
-    nodes.append(Node(
-        package='drone_testbed', executable='algorithm_manager',
-        name='algorithm_manager',
-        parameters=[{
-            'config_file': config_rel,
-            # Must outlast takeoff. Until this fires nothing moves, so the
-            # simulated drones hold station while the real one climbs.
-            'auto_start_delay': float(cfg('auto_start_delay')),
-        }],
-        output='screen',
-    ))
+    nodes.extend(controller_nodes(config, config_path, float(cfg('auto_start_delay'))))
     nodes.append(Node(
         package='drone_testbed', executable='live_visualizer',
         name='live_visualizer',
