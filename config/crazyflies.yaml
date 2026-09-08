@@ -83,6 +83,24 @@ robots:
     initial_position: [0.179, 0.219, 0.0158]
     type: cf21
 
+  # Third airframe, added 2026-09-08. Same channel and datarate as the other
+  # two, separated by address -- keep it that way, see the note above.
+  #
+  # initial_position matches drone3's mark in testbed_fig4.yaml. It is
+  # informational under "vendor" tracking (identification is by name, not
+  # proximity), but keep it honest so a scan of this file matches the floor.
+  #
+  # BEFORE FLYING THIS AS A THIRD REAL DRONE, read the SEPARATION note in
+  # testbed_fig4.yaml. On that pattern only drone1-drone4 stays safely apart
+  # (0.354 m); every trio puts two aircraft within 12 cm of each other in the
+  # xy plane, and drone3-drone4 pass within 2 cm. There is no collision term
+  # in TrochoidalConsensus -- it will fly them together and report success.
+  drone_3:
+    enabled: true
+    uri: radio://0/20/2M/E7E7E7E7E9
+    initial_position: [-0.186, -0.034, 0.0158]
+    type: cf21
+
 robot_types:
   cf21:
     motion_capture:
