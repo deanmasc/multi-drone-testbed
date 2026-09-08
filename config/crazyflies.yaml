@@ -19,52 +19,67 @@ robots:
     uri: radio://0/20/2M/E7E7E7E7E7
     initial_position: [0.235, -0.132, 0.0158]
     type: cf21
-  # Second airframe. The scan reported this one as radio://0/50/250K, i.e. a
-  # different channel AND a different datarate from drone_1.
+  # Second airframe. TWO physical drones have occupied this slot, and they are
+  # told apart ONLY by channel/datarate, because both sit on the factory-default
+  # address E7E7E7E7E7. That is exactly how they were confused on 2026-09-01: a
+  # scan was read as "the same drone changed its radio settings" when it was in
+  # fact a different airframe answering. Label the airframes physically, and see
+  # the address note below.
   #
-  # 2026-09-01: a DIFFERENT airframe was tried here briefly, on
-  # radio://0/65/1M/E7E7E7E7E7. Do not go back to it without flashing it first.
-  # The radio link was fine -- crazyflie_server reported "[drone_2] is fully
-  # connected!" -- but its firmware was too old:
-  #     Unable to find variable [stateEstimate.x]
-  #     Unable to find variable [supervisor.info]
-  # (supervisor.info only exists in firmware 2023.02 and later.) The failed log
-  # config aborted PARAMETER setup for that drone, so it never received
-  # commander.enHighLevel, stabilizer.estimator or locSrv.extPosStdDev -- while
-  # crazyflie_server still printed "All Crazyflies parameters are initialized".
-  # With the high-level commander off and the Kalman estimator unset it cannot
-  # take off and cannot use VICON. Reverted to the airframe below.
+  #   radio://0/50/250K/E7E7E7E7E7  -- flown 25 Aug to 2 Sep. This is the
+  #     airframe that tracked worst in the 2026-09-02 campaign: worst RMS
+  #     centroid distance in all four coverage runs, and it ended six of the
+  #     seven runs. Note it also carried by far the worst radio link (below),
+  #     so "bad airframe" and "bad link" were never separated. Do not treat the
+  #     airframe as proven faulty on that evidence alone.
   #
-  # The tell in the launch log is that every parameter line reads [drone_1] and
-  # none reads [drone_2]. Check for that before assuming a radio fault.
+  #   radio://0/65/1M/E7E7E7E7E7    -- IN USE. Tried briefly on 2026-09-01 and
+  #     reverted that day because its firmware predated 2023.02:
+  #         Unable to find variable [stateEstimate.x]
+  #         Unable to find variable [supervisor.info]
+  #     The failed log config aborted PARAMETER setup for it, so it never
+  #     received commander.enHighLevel, stabilizer.estimator or
+  #     locSrv.extPosStdDev -- while crazyflie_server still printed "All
+  #     Crazyflies parameters are initialized". With the high-level commander
+  #     off and the Kalman estimator unset it could neither take off nor use
+  #     VICON. FIRMWARE FLASHED 2026-09-08, so it is back in service here.
   #
-  # It will work as written, but it is not the configuration you want. One
-  # Crazyradio dongle serves both drones, and it can only be tuned to one
-  # channel/datarate pair at a time -- so with these settings it retunes
-  # between every packet to drone_1 and every packet to drone_2. That costs
-  # throughput and, worse, adds jitter to the 25Hz cmdFullState stream that
-  # both drones' position controllers depend on. 250K also carries a packet in
-  # eight times the airtime of 2M.
+  # If a flash did not take, the tell in the launch log is that every parameter
+  # line reads [drone_1] and none reads [drone_2]. Check for that before
+  # assuming a radio fault -- the drone still reports "is fully connected!".
   #
-  # The fix is a two-minute job in cfclient (Connect -> Console/Config, or the
-  # "Radio Bandwidth"/"Radio Channel"/"Radio Address" fields under Settings):
-  # put this drone on 2M, and separate the two by ADDRESS rather than by
-  # datarate. Either of these is fine:
+  # RADIO FIXED 2026-09-08. Both drones now share channel 20 at 2M and are
+  # separated by ADDRESS instead. Verified with scripts/find_drones.py:
+  #     E7E7E7E7E7  ->  radio://0/20/2M/E7E7E7E7E7   (drone_1)
+  #     E7E7E7E7E8  ->  radio://0/20/2M/E7E7E7E7E8   (drone_2)
   #
-  #     uri: radio://0/20/2M/E7E7E7E7E8    # same channel, different address
-  #     uri: radio://0/80/2M/E7E7E7E7E7    # different channel, same datarate
+  # Why this matters, because it is easy to undo by accident:
   #
-  # The first is better: sharing one channel and datarate is what lets
-  # Crazyswarm2's broadcast path (the `broadcasts:` block below) address both
-  # drones in a single packet. Note that both drones currently sit on the
-  # factory-default address E7E7E7E7E7, so if you put them on the same channel
-  # you MUST change one address or they will both answer to the same packets.
+  #   - One Crazyradio dongle serves both drones and can only be tuned to one
+  #     channel/datarate pair at a time. Previously drone_1 was on 20/2M and
+  #     drone_2 on 50/250K (then 65/1M), so the dongle retuned between every
+  #     single packet. That cost throughput and added jitter to the 25Hz
+  #     cmdFullState stream both position controllers depend on -- an
+  #     asymmetric penalty paid only by drone_2, which is also the drone that
+  #     tracked worst. Those two facts were never separated; do not read the
+  #     2026-09-02 campaign as proof that the drone_2 airframe is faulty.
+  #
+  #   - Sharing one channel and datarate is what lets Crazyswarm2's broadcast
+  #     path (the `broadcasts:` block below) address both drones in one packet.
+  #
+  #   - Separating by address is also the only thing that makes the two
+  #     airframes reliably distinguishable. Channel/datarate alone already
+  #     failed at that once, on 2026-09-01.
+  #
+  # If you ever change a radio address, remember the stock one-liner scan only
+  # looks at E7E7E7E7E7 and will silently miss the other drone. Use
+  # scripts/find_drones.py, which sweeps addresses.
   #
   # The key name here must match the VICON Tracker rigid body exactly, and is
   # what cf_name/mocap_name are set to on the launch command line.
   drone_2:
     enabled: true
-    uri: radio://0/50/250K/E7E7E7E7E7
+    uri: radio://0/20/2M/E7E7E7E7E8
     initial_position: [0.179, 0.219, 0.0158]
     type: cf21
 
