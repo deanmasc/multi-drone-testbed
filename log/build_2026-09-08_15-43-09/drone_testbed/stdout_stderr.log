@@ -1,0 +1,41 @@
+running egg_info
+writing ../../../build/drone_testbed/drone_testbed.egg-info/PKG-INFO
+writing dependency_links to ../../../build/drone_testbed/drone_testbed.egg-info/dependency_links.txt
+writing entry points to ../../../build/drone_testbed/drone_testbed.egg-info/entry_points.txt
+writing requirements to ../../../build/drone_testbed/drone_testbed.egg-info/requires.txt
+writing top-level names to ../../../build/drone_testbed/drone_testbed.egg-info/top_level.txt
+reading manifest file '../../../build/drone_testbed/drone_testbed.egg-info/SOURCES.txt'
+writing manifest file '../../../build/drone_testbed/drone_testbed.egg-info/SOURCES.txt'
+running build
+running build_py
+copying drone_testbed/kuramoto_node.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed
+copying drone_testbed/algorithms/__init__.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms
+copying drone_testbed/algorithms/kuramoto.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms
+copying drone_testbed/utils/controller_launch.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/utils
+running install
+running install_lib
+copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms/__init__.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms
+copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms/kuramoto.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms
+copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/kuramoto_node.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed
+copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/utils/controller_launch.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/utils
+byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms/__init__.py to __init__.cpython-310.pyc
+byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms/kuramoto.py to kuramoto.cpython-310.pyc
+byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/kuramoto_node.py to kuramoto_node.cpython-310.pyc
+byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/utils/controller_launch.py to controller_launch.cpython-310.pyc
+running install_data
+copying launch/sim.launch.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/launch
+copying launch/hardware_hybrid.launch.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/launch
+copying config/testbed_kuramoto.yaml -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/config
+running install_egg_info
+removing '/home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed-0.1.0-py3.10.egg-info' (and everything under it)
+Copying ../../../build/drone_testbed/drone_testbed.egg-info to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed-0.1.0-py3.10.egg-info
+running install_scripts
+Installing algorithm_manager script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+Installing crazyflie_node script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+Installing drone_node script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+Installing formation_lifecycle script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+Installing kuramoto_controller script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+Installing live_visualizer script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+Installing mocap_state_node script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+Installing sim_visualizer script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+writing list of installed files to '/home/tam/Desktop/multi-drone-testbed/build/drone_testbed/install.log'

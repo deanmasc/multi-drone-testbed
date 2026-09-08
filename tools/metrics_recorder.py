@@ -589,9 +589,7 @@ class KuramotoMetrics(MetricSet):
         super().__init__(ids, params)
         self.center = np.asarray(params.get('center', [0., 0.]), dtype=float)
         self.radius = float(params.get('radius', .65))
-        self.amplitude = float(params.get('amplitude', .15))
-        angles = 2 * np.pi * np.arange(len(ids)) / len(ids)
-        self.slots = np.column_stack([np.cos(angles), np.sin(angles)])
+        self.offsets = 2 * np.pi * np.arange(len(ids)) / len(ids)
         self.max_age = .5
         self.max_skew = .1
         self.sample_period = .1
@@ -603,8 +601,10 @@ class KuramotoMetrics(MetricSet):
                      f'x_{d}', f'y_{d}', f'radius_{d}', f'radius_des_{d}',
                      f'position_err_{d}']
         cols += [f'phase_diff_{self.ids[a]}_{self.ids[b]}' for a, b in self.pairs]
+        cols += [f'phase_offset_error_{self.ids[a]}_{self.ids[b]}' for a, b in self.pairs]
         return cols + ['phase_valid', 'order_R', 'phase_max_error',
-                       'tracking_rms', 'radius_spread', 'd_min']
+                       'tracking_rms', 'radius_spread', 'd_min',
+                       'angular_spacing_rms', 'angular_spacing_max_error', 'radius_rms']
 
     def row(self, t, pos, vel, phases=None, phase_ages=None, state_ages=None, active=False):
         n = len(self.ids)
@@ -617,8 +617,9 @@ class KuramotoMetrics(MetricSet):
         physical_valid = bool(state_fresh.all() and np.ptp(state_ages) <= self.max_skew)
         aligned = phase_valid and physical_valid and np.ptp(np.r_[phase_ages, state_ages]) <= self.max_skew
         radii = np.linalg.norm(pos - self.center, axis=1)
-        desired = self.radius + self.amplitude * np.sin(phases)
-        errors = np.linalg.norm(pos - self.center - desired[:, None] * self.slots, axis=1)
+        desired = np.full(n, self.radius)
+        targets = self.center + self.radius * np.column_stack([np.cos(phases), np.sin(phases)])
+        errors = np.linalg.norm(pos - targets, axis=1)
         out = [t, float(active)]
         for k in range(n):
             local_valid = phase_fresh[k] and state_fresh[k] and abs(phase_ages[k] - state_ages[k]) <= self.max_skew
@@ -629,13 +630,26 @@ class KuramotoMetrics(MetricSet):
         diffs = [float(np.arctan2(np.sin(phases[a] - phases[b]),
                                  np.cos(phases[a] - phases[b]))) if phase_valid else np.nan
                  for a, b in self.pairs]
-        order = float(abs(np.mean(np.exp(1j * phases)))) if phase_valid else np.nan
+        corrected = phases - self.offsets
+        offset_errors = [float(np.arctan2(np.sin(corrected[a] - corrected[b]),
+                                         np.cos(corrected[a] - corrected[b])))
+                         if phase_valid else np.nan for a, b in self.pairs]
+        order = float(abs(np.mean(np.exp(1j * corrected)))) if phase_valid else np.nan
+        # Compare directed gaps in assigned drone order, including the last-to-first
+        # edge. Angles at the center are undefined, so don't report spacing there.
+        angles = np.arctan2(pos[:, 1] - self.center[1], pos[:, 0] - self.center[0])
+        gap_error = np.roll(angles, -1) - angles - 2 * np.pi / n
+        gap_error = np.arctan2(np.sin(gap_error), np.cos(gap_error))
+        angular_valid = physical_valid and bool(np.all(radii > 1e-6))
         distances = [np.linalg.norm(pos[a] - pos[b]) for a, b in self.pairs]
-        return out + diffs + [float(phase_valid), order,
-                              max(map(abs, diffs), default=0.) if phase_valid else np.nan,
+        return out + diffs + offset_errors + [float(phase_valid), order,
+                              max(map(abs, offset_errors), default=0.) if phase_valid else np.nan,
                               float(np.sqrt(np.mean(errors**2))) if aligned else np.nan,
                               float(np.std(radii)) if physical_valid else np.nan,
-                              min(distances, default=np.nan) if physical_valid else np.nan]
+                              min(distances, default=np.nan) if physical_valid else np.nan,
+                              float(np.sqrt(np.mean(gap_error**2))) if angular_valid else np.nan,
+                              float(np.max(np.abs(gap_error))) if angular_valid else np.nan,
+                              float(np.sqrt(np.mean((radii - self.radius)**2))) if physical_valid else np.nan]
 
     def summarise(self, t, data, pos_hist):
         c = {name: i for i, name in enumerate(self.columns())}
@@ -643,7 +657,8 @@ class KuramotoMetrics(MetricSet):
         order = data[:, c['order_R']]
         valid = active & np.isfinite(order)
         out = ['KURAMOTO -- oscillator synchronization and physical formation tracking',
-               '  Phase units: radians; distance units: metres.',
+               '  Phase/spacing units: radians; distance units: metres.',
+               '  order_R and phase_max_error use phases minus assigned polygon offsets.',
                '  Latest receipt-time samples; no source timestamps or delay compensation.',
                f'  Validity limits: age <= {self.max_age}s, receipt skew <= {self.max_skew}s.',
                f'  valid active phase samples  {valid.sum()} of {active.sum()}']
@@ -664,7 +679,8 @@ class KuramotoMetrics(MetricSet):
                 break
         out.append('  first R > 0.99 held for 5s  ' +
                    (f't = {settled:.3f}s (record clock)' if settled is not None else 'not observed'))
-        for name in ['phase_max_error', 'tracking_rms', 'radius_spread', 'd_min']:
+        for name in ['phase_max_error', 'angular_spacing_rms', 'angular_spacing_max_error',
+                     'tracking_rms', 'radius_rms', 'radius_spread', 'd_min']:
             values = data[active, c[name]]
             values = values[np.isfinite(values)]
             if len(values):
@@ -674,7 +690,7 @@ class KuramotoMetrics(MetricSet):
             values = values[np.isfinite(values)]
             if len(values):
                 out.append(f'  {d} measured radius range  {values.min():.4f} .. {values.max():.4f} m')
-        out.append('  Phase agreement alone does not establish physical breathing synchronization.')
+        out.append('  Phase agreement alone does not establish physical rotating-ring tracking.')
         return out
 
 

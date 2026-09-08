@@ -15,7 +15,7 @@ class MetricsTests(unittest.TestCase):
         self.pos = np.array([[.65, 0.], [-.65, 0.]])
         self.vel = np.zeros((2, 2))
 
-    def row(self, phases=(0., 0.), ages=(0., 0.), t=0., active=True):
+    def row(self, phases=(0., np.pi), ages=(0., 0.), t=0., active=True):
         return self.m.row(t, self.pos, self.vel, phases, ages, [0., 0.], active)
 
     def test_known_phases_and_tracking(self):
@@ -23,10 +23,24 @@ class MetricsTests(unittest.TestCase):
         self.assertEqual(row['order_R'], 1.)
         self.assertAlmostEqual(row['tracking_rms'], 0.)
         self.assertAlmostEqual(row['d_min'], 1.3)
-        row = dict(zip(self.m.columns(), self.row((0., np.pi))))
+        self.assertAlmostEqual(row['angular_spacing_rms'], 0.)
+        self.assertAlmostEqual(row['radius_rms'], 0.)
+        self.assertAlmostEqual(row['phase_offset_error_a_b'], 0.)
+        row = dict(zip(self.m.columns(), self.row((0., 0.))))
         self.assertAlmostEqual(row['order_R'], 0.)
         row = dict(zip(self.m.columns(), self.row((.01, 2*np.pi-.01))))
         self.assertAlmostEqual(row['phase_diff_a_b'], .02)
+
+    def test_physical_errors_are_independent_of_phase_lock(self):
+        self.pos = np.array([[.8, 0.], [0., .8]])
+        row = dict(zip(self.m.columns(), self.row()))
+        self.assertAlmostEqual(row['order_R'], 1.)
+        self.assertAlmostEqual(row['angular_spacing_rms'], np.pi / 2)
+        self.assertAlmostEqual(row['radius_rms'], .15)
+        self.assertGreater(row['tracking_rms'], .5)
+        self.pos[0] = 0.
+        row = dict(zip(self.m.columns(), self.row()))
+        self.assertTrue(np.isnan(row['angular_spacing_rms']))
 
     def test_missing_stale_and_skewed_phases(self):
         for phases, ages in [((0., np.nan), (0., 0.)), ((0., 0.), (0., .6)),

@@ -1,0 +1,148 @@
+# Fig. 4 of Monsingh, Sinha & Chung (2024): four agents, four DIFFERENT
+# trochoids, from one distributed consensus law.
+#
+# Why this file exists separately from testbed_hybrid.yaml. That one uses an
+# unweighted directed cycle, and a cycle's Laplacian is circulant -- every
+# eigenvector of a circulant matrix has entries of equal modulus, so the radius
+# each agent ends up with is necessarily identical and only the phase differs.
+# All four drones share one annulus. That is correct behaviour, and it is what
+# the paper's Remark 4.2 and its Case 4 experiment describe, but it is not the
+# varied pattern of Fig. 4.
+#
+# To get the varied pattern you have to break the circulant symmetry, which
+# means a WEIGHTED, non-cyclic digraph. The adjacency below is one such graph,
+# constructed for this testbed -- it is NOT one of the six in the paper's
+# Table 1, and its frequency ratio of 10/3 is not among the published values
+# (3.5, 6, 14, 2.5, 1.4659, 2.1466). Its Laplacian is:
+#
+#     [ 5  0 -5  0 ]
+#     [-3  4 -1  0 ]
+#     [-1  0  3 -2 ]
+#     [-1 -5  0  6 ]
+#
+# Predicted per-agent radius weights, straight from the eigenvectors (these
+# depend only on the graph, so the rescaling below does not change them):
+#     slow mode   [0.657 0.635 0.394 1.000]   61% spread
+#     fast mode   [1.000 0.600 0.600 1.000]   40% spread
+# Which at the gains below comes out as measured steady-state orbit radii of
+# 0.322 / 0.246 / 0.193 / 0.397 m for drones 1/2/3/4.
+# The frequency ratio is exactly 10/3 -- rational, so the curves CLOSE rather
+# than filling an annulus densely, which is what makes four clean distinct
+# shapes rather than four smeared bands.
+#
+# All six Table 1 cases DO reproduce correctly through this pipeline (their
+# published |lambda| ratios come back to within 0.5%), so swapping to a
+# published one is a config change and nothing more. Case 2 is the most
+# dramatic, a 96% radius spread against the 61% here, and being able to report
+# "we reproduced Case 2 and measured the published ratio on hardware" is a
+# stronger claim than a graph of our own:
+#
+#     adjacency:                    # Table 1 Case 2, ratio 6.0
+#       drone1: {drone3: 6.0}
+#       drone2: {drone1: 1.0, drone3: 2.0}
+#       drone3: {drone4: 2.0}
+#       drone4: {drone1: 1.0, drone2: 4.0}
+#
+# Note Table 1 Case 4 is the plain directed cycle, and it comes out at 0%
+# spread -- the same result testbed_hybrid.yaml gives, from the same cause.
+
+simulation:
+  dt: 0.1
+  control_rate: 10.0
+  sim_rate: 10.0
+  bounds: 1.5
+
+drones:
+  # drone1 and drone4 are the ones to fly for real -- they are the only pair
+  # that stays safely apart (0.354m); see the SEPARATION note below. Mocap
+  # places them, but PUT THEM THERE ANYWAY. Solved by
+  # tools/design_consensus_gains.py --target-radius 0.45, built from the undamped
+  # eigenvectors so the whole initial displacement feeds the pattern instead of
+  # the modes that decay. Re-run the tool if you change anything at all.
+  - id: "drone1"
+    initial_position: [0.235, -0.132]
+    initial_velocity: [0.0, 0.0]
+    role: "leader"
+  - id: "drone2"
+    initial_position: [0.013, 0.070]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone3"
+    initial_position: [-0.186, -0.034]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone4"
+    initial_position: [0.179, 0.219]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+
+# Gains: theta = 2.28488, beta = 1 time-rescaled 6x by
+# tools/design_consensus_gains.py --theta 2.28488 --rescale 6 --target-radius 0.38
+#
+# The rescaling is exact, not an approximation. The closed loop is linear, so
+# mapping (alpha, beta, kappa) -> (c^2*alpha, c*beta, c^2*kappa) multiplies
+# every eigenvalue by c and leaves every eigenvector alone: identical shape,
+# identical relative radii, identical frequency ratio, just a faster clock. It
+# is what makes this flyable -- as published the periods are 114s and 381s and
+# the figure is a snapshot at t = 2500s.
+#
+# Measured from the gains actually written below (rescale 6), by computing the
+# closed-loop eigenvalues and by running the algorithm:
+#   exactly 2 pairs on the imaginary axis  <- the trochoid condition holds
+#   slow period 63.53s, fast period 19.06s, ratio 3.3337 (= 10/3)
+#   transient settles in about 12.5s (slowest decaying pole -0.239)
+#   steady-state envelope 0.397m, and the same including the transient
+#
+# HOW LONG TO FLY. The frequency ratio is 10/3, so the curve only closes after
+# the LCM of the two periods -- 3 slow periods, 190.6s -- plus the 12.5s
+# transient. Use flight_duration:=205.0. At 60s you see less than one slow
+# period and the shape will not have closed.
+#   That is a 3.5-minute flight. Start on a fresh battery and watch for the
+#   3.8V warning in config/crazyflies.yaml; there is no low-battery abort in
+#   crazyflie_node yet.
+#
+# THE ACCELERATION CLAMP. Peak demand at these gains is 0.385 m/s^2, which is
+# UNDER the 0.5 clamp, so nothing is clipped at any point. (An earlier note here
+# warned of 0.93 m/s^2 clipping the first few seconds; that was true of the
+# --rescale 8 / --target-radius 0.45 gains this file used to carry, not of the
+# ones below.) Peak speed is 0.081 m/s -- this is a slow, gentle pattern.
+#
+# SEPARATION -- READ THIS BEFORE FLYING MORE THAN ONE REAL DRONE. All four
+# agents orbit the SAME centre with different radii, so unlike a formation law
+# they do pass close to one another. Measured minimum separation over a 200s
+# flight, transient included:
+#
+#     drone1-drone4   0.354 m   <- essentially constant (min 0.354, max 0.355)
+#     drone2-drone3   0.224 m   <- also near-constant
+#     drone1-drone3   0.118 m
+#     drone2-drone4   0.094 m
+#     drone1-drone2   0.073 m
+#     drone3-drone4   0.020 m   <- a collision, not a near miss
+#
+# So with two real drones the pair MUST be drone1 and drone4. Every other
+# combination puts two aircraft within 12cm of each other. There is no
+# collision-avoidance term in this control law -- it will fly them into each
+# other and report success.
+#
+# CAUTION on beta. At 8.0 it is eight times the damping of the cycle config, and
+# it multiplies the MEASURED velocity -- which mocap_state_node produces by
+# differentiating position with no filtering at all. Velocity noise reaches the
+# acceleration command amplified by that factor. If the first flight shows
+# command chatter, that is the cause: filter the mocap velocity, or drop to
+# --rescale 6 and lengthen the flight.
+algorithm:
+  name: "TrochoidalConsensus"
+  params:
+    alpha: 1.8231
+    beta:  6.0000
+    kappa: 0.3272
+    theta: 2.2849
+    max_accel: 0.5
+    # Weighted digraph. Each entry is {observed_drone: weight}; the weights are
+    # the a_ij of the control law and are exactly what makes the agents differ.
+    # An unweighted list form is still accepted and means a_ij = 1.
+    adjacency:
+      drone1: {drone3: 5.0}
+      drone2: {drone1: 3.0, drone3: 1.0}
+      drone3: {drone1: 1.0, drone4: 2.0}
+      drone4: {drone1: 1.0, drone2: 5.0}

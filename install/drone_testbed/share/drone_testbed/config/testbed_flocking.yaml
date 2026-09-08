@@ -1,0 +1,100 @@
+# Olfati-Saber flocking (Algorithm 2) -- four agents tracking a virtual leader.
+#
+# Unlike every other config here, there is no `adjacency` block. The
+# communication graph is decided by distance at runtime: agent i talks to
+# whoever is currently within `sense_range`. Editing an adjacency list would do
+# nothing.
+simulation:
+  dt: 0.05
+  control_rate: 20.0
+  sim_rate: 20.0
+  bounds: 2.0
+
+# Scattered, but deliberately NOT symmetric -- a neat square start would put the
+# four in the target lattice already and hide the part worth watching. They are
+# also kept fairly close together on purpose: starting them at the arena corners
+# makes the pull-in phase peak at 0.63 m/s, which is uncomfortably close to the
+# 0.7 m/s clamp. From here the peak is 0.43 m/s.
+drones:
+  - id: "drone1"
+    initial_position: [-0.7, 0.5]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+
+  - id: "drone2"
+    initial_position: [0.3, 0.8]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+
+  - id: "drone3"
+    initial_position: [0.8, -0.3]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+
+  - id: "drone4"
+    initial_position: [-0.4, -0.6]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+
+# Sizing, and why these numbers. All of the below was measured by running the
+# config, not estimated.
+#
+# `spacing` is NOT the separation you get -- it settles at 0.84x here, so
+# spacing 0.70 lands the drones 0.59 m apart. That 0.59 is the number that
+# matters for downwash and mocap separation. If you change `spacing`, re-measure.
+#
+# The cause is gain_c1_gamma, not the neighbour count. Every agent is pulled
+# toward the SAME leader, which is a net inward squeeze on the group; the
+# neighbour springs push back, and the lattice settles where the two balance --
+# always tighter than the pairwise equilibrium. Verified by running two agents
+# alone, where no multi-neighbour effect is possible:
+#     c1_gamma = 0.5  ->  gap 0.586      c1_gamma = 0  ->  gap 0.700 (exact)
+# The squeeze scales with the gain: c1_gamma 0.5 / 0.2 / 0.05 gives 0.84x /
+# 0.92x / 0.97x. Softening the leader gain gets you closer to the requested
+# spacing, at the cost of slower, looser tracking.
+#
+# sense_range 0.84 m is 1.2x spacing, the ratio the paper uses.
+#
+# gain_c2_alpha and gain_c2_gamma both follow the paper's damping heuristic
+# c2 = 2*sqrt(c1). Raising c1 without raising c2 to match gives an oscillating
+# flock that never settles.
+#
+# gamma_mode: circle keeps the flock in the arena forever. 'line' matches the
+# textbook figures but flies the group straight into the wall, and 'static'
+# turns the gamma term into plain origin-seeking -- useful if you only want to
+# watch the lattice form and then hold.
+#
+# Measured envelope over 240 s from the starts above.
+#
+# Settling happens in two stages, and only the first is visible:
+#   t = 3.4 s   all four sides are at their final 0.586 m and never move again;
+#               relative speed between drones is already under 1 cm/s
+#   t = 21 s    the diagonals finish drifting to 0.700 / 0.939 m -- a slow
+#               squash of the diamond at about 5 mm/s, too slow to see on
+#               screen, and easy to mistake for the shape being settled at 3 s
+#
+#   peak speed  0.43 m/s during pull-in, 0.16 m/s once settled
+#   peak accel  saturates the 0.5 clamp during pull-in only; 0.03 steady
+#   max radius  1.32 m, inside the 1.5 m geofence with margin
+#
+# If you want a settling-time number for the report, say which one you mean.
+# 3.4 s is when the flock forms; 21 s is when it stops changing at all.
+algorithm:
+  name: "Flocking"
+  params:
+    spacing: 0.70          # m -- pairwise target; settles ~0.84x of this
+    sense_range: 0.84      # m -- 1.2x spacing; must exceed spacing
+    epsilon: 0.1           # sigma-norm smoothing
+    bump_h: 0.2            # bump function knee, in (0,1)
+    action_a: 5.0          # 0 < a <= b; a == b gives a symmetric push/pull
+    action_b: 5.0
+    gain_c1_alpha: 1.0     # spacing gain
+    gain_c2_alpha: 2.0     # velocity matching, = 2*sqrt(c1_alpha)
+    gain_c1_gamma: 0.5     # leader tracking, position
+    gain_c2_gamma: 1.4     # leader tracking, velocity, ~= 2*sqrt(c1_gamma)
+    gamma_mode: "circle"   # circle | line | static
+    gamma_center: [0.0, 0.0]
+    gamma_radius: 0.8      # m
+    gamma_speed: 0.15      # m/s -- 34 s per lap
+    gamma_heading: 0.0     # rad, line mode only
+    max_accel: 0.5         # m/s^2, matches crazyflie_node's clamp

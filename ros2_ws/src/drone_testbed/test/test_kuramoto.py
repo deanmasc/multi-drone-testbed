@@ -20,13 +20,13 @@ class KuramotoTests(unittest.TestCase):
         np.testing.assert_array_equal(x.acceleration, y.acceleration)
         self.assertEqual(a.phase, b.phase)
 
-    def test_default_formation_synchronizes_and_breathes(self):
+    def test_default_formation_synchronizes_and_rotates(self):
         cfg = yaml.safe_load((Path(__file__).parents[1] / 'config/testbed_kuramoto.yaml').read_text())
         algo = KuramotoFormation()
         ids = [d['id'] for d in cfg['drones']]
         algo.configure(cfg['algorithm']['params'], ids)
         states = {d['id']: DroneState(d['id'], np.array(d['initial_position']), np.zeros(2)) for d in cfg['drones']}
-        radii, separations = [], []
+        radii, separations, angles, spacing_errors = [], [], [], []
         for k in range(2400):
             controls = algo.compute_controls(states, .05)
             for d, ctrl in controls.items():
@@ -38,19 +38,40 @@ class KuramotoTests(unittest.TestCase):
                                    for i, a in enumerate(ids) for b in ids[i+1:]))
             if k > 1600:
                 radii.append(np.linalg.norm(states['drone1'].position))
-        self.assertGreater(min(separations), .6)
-        self.assertGreater(max(radii) - min(radii), .25)
-        phases = [a.phase for a in algo.agents.values()]
+                actual = np.array([np.arctan2(states[d].position[1], states[d].position[0]) for d in ids])
+                angles.append(actual[0])
+                gaps = np.roll(actual, -1) - actual - 2*np.pi/len(ids)
+                spacing_errors.append(np.max(np.abs(np.arctan2(np.sin(gaps), np.cos(gaps)))))
+        self.assertGreater(min(separations), .5)
+        self.assertLess(max(abs(r - .65) for r in radii), .03)
+        self.assertGreater(np.unwrap(angles)[-1] - np.unwrap(angles)[0], 4*np.pi)
+        self.assertLess(max(spacing_errors), .03)
+        phases = [a.phase - a.phase_offsets[d] for d, a in algo.agents.items()]
         self.assertGreater(abs(sum(np.exp(1j * p) for p in phases) / len(phases)), .999)
         algo.reset()
         self.assertAlmostEqual(algo.agents['drone1'].phase, 0.)
+
+    def test_rotating_equilibrium_and_wraparound(self):
+        ids = ['a', 'b', 'c', 'd']
+        for rotation in (0., 2*np.pi - .01):
+            params = {'initial_phases': {d: rotation + i*np.pi/2 for i, d in enumerate(ids)}}
+            algo = KuramotoFormation()
+            algo.configure(params, ids)
+            states = {}
+            for d, agent in algo.agents.items():
+                radial = np.array([np.cos(agent.phase), np.sin(agent.phase)])
+                states[d] = DroneState(d, agent.radius * radial,
+                                      agent.radius * agent.omega * np.array([-radial[1], radial[0]]))
+            controls = algo.compute_controls(states, .05)
+            for d, ctrl in controls.items():
+                np.testing.assert_allclose(ctrl.acceleration, -.35**2 * states[d].position, atol=1e-12)
 
     def test_missing_neighbors_and_validation(self):
         agent = KuramotoAgent('a', {}, ['a', 'b'])
         out = agent.step(DroneState('a'), {}, {}, .1)
         self.assertTrue(np.all(np.isfinite(out.acceleration)))
-        self.assertAlmostEqual(agent.phase, .05)
-        for params in [{'radius': .1, 'amplitude': .2}, {'max_accel': 0},
+        self.assertAlmostEqual(agent.phase, .035)
+        for params in [{'radius': 0}, {'max_accel': 0},
                        {'adjacency': {'a': ['unknown']}}, {'omega': math.nan}]:
             with self.assertRaises(ValueError):
                 KuramotoAgent('a', params, ['a', 'b'])

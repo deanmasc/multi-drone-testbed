@@ -423,10 +423,10 @@ multi-drone-testbed/
 | cflib | Direct Crazyflie comms | `pip3 install cflib` |
 | VICON Tracker | Motion capture (lab only) | Lab installation |
 
-## Kuramoto breathing formation (distributed ROS controllers)
+## Kuramoto rotating ring (distributed ROS controllers)
 
 `KuramotoFormation` combines neighbor-coupled Kuramoto oscillators with a damped
-relative-position formation law. Both `sim.launch.py` and
+relative-position rotating-ring law. Both `sim.launch.py` and
 `hardware_hybrid.launch.py` select **one `kuramoto_controller` process per drone**
 when this algorithm is configured. There is no algorithm manager in this mode.
 A `formation_lifecycle` node only broadcasts start/reset and algorithm status;
@@ -460,25 +460,35 @@ subscribes only to its own `/<id>/state`, its configured neighbors' state and
 it explicitly. Static configuration supplies the common center and polygon slot
 assigned by drone order; there is no live centroid, leader, or global state input.
 
-For unit polygon slots `q_i`, local phase `theta_i`, and
-`s_i = radius + amplitude*sin(theta_i)`, the implemented law is:
+Phase `theta_i` is now the absolute orbital angle. Drone order assigns an offset
+`delta_i = 2*pi*i/N`; coupling synchronizes `theta_i - delta_i`, giving four drones
+90-degree spacing rather than sending them all to one point. Define
+`e(theta) = [cos(theta), sin(theta)]` and its tangent
+`t(theta) = [-sin(theta), cos(theta)]`. The local law is:
 
 ```text
-theta_dot_i = omega + phase_gain * sum_j sin(theta_j - theta_i)
-p_des_i = center + s_i*q_i
-v_des_i = amplitude*cos(theta_i)*theta_dot_i*q_i
-u_i = position_gain*(p_des_i - p_i)
-    + formation_gain*sum_j ((p_j - p_i) - s_i*(q_j - q_i))
+theta_dot_i = omega + phase_gain * sum_j sin((theta_j-delta_j) - (theta_i-delta_i))
+p_des_i = center + radius*e(theta_i)
+v_des_i = radius*theta_dot_i*t(theta_i)
+u_i = -radius*theta_dot_i^2*e(theta_i)
+    + position_gain*(p_des_i - p_i)
+    + formation_gain*sum_j ((p_j - p_i) - (p_des_j - p_des_i))
     + velocity_gain*(v_des_i - v_i)
 ```
 
-All sums are over configured neighbors. Desired offsets are vectors, so their
-directions preserve the polygon. `radius` is the polygon circumradius, not its
-edge length. At synchronization, each edge length scales with `s_i`. Velocity
-feedback adapts the proposed position controller to the testbed's acceleration
-interface. Acceleration is limited by Euclidean norm to `max_accel`. Tracking is
-approximate (no acceleration feedforward). Initial phases differ to demonstrate
-synchronization; arbitrary graphs/initial phases need not synchronize.
+All sums are over configured neighbors; the relative-position term requires both
+fresh neighbor position and phase. Centripetal acceleration is fed forward;
+tangential acceleration during synchronization is handled by feedback. Commands
+are limited by Euclidean norm to `max_accel`. `radius` is the constant ring radius
+and `omega` is its synchronized angular speed. The old breathing `amplitude`
+parameter is no longer used.
+
+`initial_phases` now specifies absolute orbital angles in radians. The example
+uses reproducible uneven angles and matching initial positions to show the ring
+organizing while rotating counterclockwise, with a lap taking about 18 seconds.
+For other starts, set each position to `center + radius*e(initial_phase)` and
+preserve drone order around the ring. Arbitrary graphs/initial phases need not
+synchronize or maintain separation.
 
 Neighbor data older than `neighbor_timeout` (local receipt time) is omitted;
 missing neighbors do not block the other controllers. Stale own state or an
@@ -489,7 +499,7 @@ through `/reset_simulation`; live `/set_algorithm` switching is not supported in
 this distributed mode—relaunch with the desired configuration.
 
 The example is sized for the 1.5 m arena. Numerical tests cover 120 seconds of
-synchronization/breathing, bounds, acceleration limits, neighbor isolation,
+synchronization/rotation, radius and angular spacing errors, bounds, acceleration limits, neighbor isolation,
 missing neighbors, and invalid parameters. This controller has no collision
 avoidance term and has not been flight validated; use the simulation to assess
 initial placement and retain the hybrid launch's altitude staggering.
@@ -509,9 +519,15 @@ python3 tools/metrics_recorder.py \
 ```
 
 The recorder automatically selects Kuramoto metrics: all drone phases and receipt
-ages, wrapped pairwise phase differences, fleet order parameter `order_R`, maximum
-phase error, individual measured/desired radii, slot position errors,
-`tracking_rms`, radius spread, and minimum pair separation. It records all four
+ages, raw wrapped pairwise `phase_diff_*`, offset-corrected
+`phase_offset_error_*`, and fleet order parameter `order_R` computed from
+`theta_i - delta_i`. A correctly spaced ring has `order_R` approaching 1 and
+`phase_max_error` approaching 0; raw phase differences retain the polygon offsets.
+Physical metrics include `angular_spacing_rms` and `angular_spacing_max_error`
+(wrapped error of consecutive angular gaps from `2*pi/N`, in radians),
+`radius_rms` (error from the configured radius), individual measured/desired radii,
+orbital target position errors, `tracking_rms`, radius spread, and minimum pair
+separation `d_min`. Angular spacing is undefined if a drone is at the center. It records all four
 agents, including the simulated neighbors in a two-real-drone run. Ctrl-C appends
 the summary, including the first interval with `R > 0.99` for five seconds during
 active operation. Times refer to the record clock. Stops, invalid samples, and

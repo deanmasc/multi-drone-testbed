@@ -1,0 +1,40 @@
+simulation:
+  dt: 0.1               # Physics timestep (seconds)
+  control_rate: 5.0      # Algorithm update rate (Hz)
+  sim_rate: 10.0         # Drone physics update rate (Hz)
+  bounds: 2.0            # Arena half-width (metres)
+
+drones:
+  - id: "drone1"
+    initial_position: [0.0, 0.0]
+    initial_velocity: [0.0, 0.0]
+    role: "leader"
+
+  - id: "drone2"
+    initial_position: [1.0, 0.0]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+
+  - id: "drone3"
+    initial_position: [0.0, 1.0]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+
+  - id: "drone4"
+    initial_position: [-1.0, 0.0]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+
+  - id: "drone5"
+    initial_position: [0.0, -1.0]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+
+# Select which algorithm to run and its parameters
+algorithm:
+  name: "Trochoidal"
+  params:
+    orbit_radius: 0.8
+    orbit_speed: 0.3
+    epicycle_radius: 0.2
+    epicycle_speed: 1.5
