@@ -7,3 +7,4 @@ from . import square
 from . import trochoidal_consensus
 from . import flocking
 from . import coverage
+from . import distance_formation

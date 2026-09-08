@@ -12,7 +12,7 @@ The testbed provides:
 - A physics-accurate 2D simulation for rapid algorithm iteration
 - A pluggable algorithm interface so new strategies can be added without changing the core framework
 - A hardware pipeline connecting real Crazyflie 2.x drones through VICON pose estimation to the same algorithm interface
-- Implemented distributed algorithms: Leader-Follower, Consensus Formation, Trochoidal, Trochoidal Consensus, and Flocking
+- Implemented distributed algorithms: Leader-Follower, Consensus Formation, Trochoidal, Trochoidal Consensus, Flocking, Coverage, and Distance-Based Formation
 
 ---
 
@@ -95,6 +95,39 @@ virtual leader (the γ-agent).
 
 Config: `config/testbed_flocking.yaml`
 
+### 5. Distance-Based Formation (`DistanceFormation`)
+
+Rigidity-based formation control: the fleet descends a potential built from
+squared *distance* errors until it satisfies a set of desired inter-agent
+ranges, and the hexagon is whatever shape satisfies them. Krick, Broucke &
+Francis (IJC 82(3), 2009), in the double-integrator form of Oh & Ahn (IJRNC
+24(12), 2014).
+
+- **Communication:** neighbour-to-neighbour over a fixed graph, like
+  `ConsensusFormation` — but each agent exchanges only a *scalar range*, not a
+  relative position vector. This is the distinction that earns the algorithm its
+  place: consensus is *displacement-based* and needs every agent to agree on
+  which way is north, while this law works with each agent in its own
+  arbitrarily rotated frame.
+- **Control law:** `u_i = -kp * Σ_j (‖p_i−p_j‖² − d_ij²)(p_i − p_j) − kv * v_i`
+- **Use case:** formation keeping when no common heading reference exists
+- **What it gives up:** distances fix the shape but not where it sits, which way
+  it points, or its handedness. The hexagon forms at an angle set by the initial
+  conditions, and that is correct behaviour rather than a tuning failure.
+- **The edge set is not a free choice.** The target framework must be
+  infinitesimally rigid — `rank R(p) = 2n−3` — or the shape has a flex the
+  distance constraints do not penalise. A hexagonal *ring* is not rigid; chords
+  have to be added. `configure` computes the rank at startup and warns if it is
+  short. The default `octahedron` topology (ring + all six two-hop chords) is
+  globally rigid; the alternatives are kept because their failures are
+  instructive, notably `k33`, which is generically rigid yet degenerates at a
+  *regular* hexagon because the six vertices lie on their circumcircle.
+- **Caveat:** convergence is only local. On a merely rigid graph a folded corner
+  satisfies every edge constraint exactly, so **edge error is not a sufficient
+  metric** — the shape has to be checked against the target directly.
+
+Config: `config/testbed_hexagon.yaml`, `config/testbed_hexagon_hybrid.yaml`
+
 ### Algorithm Parameters
 
 All algorithms are configured via `ros2_ws/src/drone_testbed/config/testbed.yaml`:
@@ -174,11 +207,13 @@ pip3 install numpy matplotlib pyyaml
 python3 run_sim.py --config testbed_flocking.yaml
 python3 run_sim.py --config testbed_fig4.yaml        # TrochoidalConsensus
 python3 run_sim.py --config testbed_trochoidal.yaml
+python3 run_sim.py --config testbed_hexagon.yaml     # DistanceFormation
 
 # Or swap the class against the default config
 python3 run_sim.py --algo Trochoidal
 # Options: LeaderFollower | ConsensusFormation | Trochoidal
-#          TrochoidalConsensus | Flocking | Square | PrintState
+#          TrochoidalConsensus | Flocking | Coverage | DistanceFormation
+#          Square | PrintState
 ```
 
 `--algo` swaps only the class — it still reads whatever parameters the loaded
@@ -328,6 +363,7 @@ error tests something no paper claimed — see `docs/PROJECT_AIM.md`.
 | **Flocking** | pairwise spacing vs the target lattice, smallest gap ever reached, velocity spread across the fleet, graph connectivity |
 | **Coverage** | locational cost `H(p)` over time, per-agent centroid distance, and at exit `H` against an offline Lloyd optimum from the same start — the "% of theoretical optimum" number |
 | **Trochoidal** | the two frequencies and their ratio, the two radii, and the envelope decay time constant, recovered by FFT of `z = x + iy` |
+| **DistanceFormation** | per-edge distance error, and separately whether the shape satisfying those edges was the one asked for; the Lyapunov function, which the continuous law forbids from rising; and the fleet centroid, which the continuous law forbids from moving |
 | anything else | positions, velocities and pairwise distances |
 
 Run it in a third terminal alongside the usual two:
@@ -390,7 +426,8 @@ multi-drone-testbed/
     │   │   ├── registry.py            # @register_algorithm decorator + lookup
     │   │   ├── leader_follower.py     # Leader-Follower implementation
     │   │   ├── consensus.py           # Consensus Formation implementation
-    │   │   └── trochoidal.py          # Trochoidal implementation
+    │   │   ├── trochoidal.py          # Trochoidal implementation
+    │   │   └── distance_formation.py  # Distance-based (rigidity) formation
     │   ├── dynamics/
     │   │   └── double_integrator.py   # 2D physics model (A, B matrices + step)
     │   ├── utils/

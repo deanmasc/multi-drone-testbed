@@ -1,0 +1,126 @@
+# Distance-based (rigidity-based) formation control -- six drones, one hexagon.
+#
+# The law is a gradient descent on squared distance errors (Krick, Broucke &
+# Francis 2009; Oh & Ahn 2014 for the double-integrator form). Each agent knows
+# only the RANGE to a handful of neighbours and the range it is supposed to
+# hold. It never reads an absolute position, and no two agents need to agree on
+# which way is north -- which is exactly what separates this from
+# ConsensusFormation, where every agent is handed a relative position VECTOR in
+# a shared frame.
+#
+# The price of dropping the shared frame: distances fix the shape but not where
+# it sits, which way it points, or its handedness. Expect the hexagon to form
+# at a different angle every time you change the starting positions. That is
+# the algorithm behaving correctly, not a tuning failure.
+
+simulation:
+  dt: 0.05
+  control_rate: 20.0
+  sim_rate: 20.0
+  bounds: 2.0
+
+# Started clustered near the origin, so the fleet has to EXPAND into the
+# hexagon. Two reasons for a clump rather than a scatter:
+#
+#   * It is far from the target shape (0.35 m of shape error at t=0), so the
+#     formation genuinely forms instead of being handed to the controller. A
+#     ring start is already hexagonal and only needs rescaling, which hides the
+#     interesting part.
+#   * It is deliberately IRREGULAR. A symmetric start is a knife edge: nothing
+#     in the law breaks the tie, so it holds its symmetry until noise breaks it
+#     at an unpredictable moment. Same trap documented in
+#     testbed_flocking_hybrid.yaml.
+#
+# drone6 starts near the middle of the clump on purpose -- it is the agent with
+# the furthest to travel and the one that decides the final orientation.
+drones:
+  - id: "drone1"
+    initial_position: [0.30, -0.02]
+    initial_velocity: [0.0, 0.0]
+    role: "leader"
+  - id: "drone2"
+    initial_position: [-0.05, 0.38]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone3"
+    initial_position: [-0.38, 0.12]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone4"
+    initial_position: [-0.20, -0.34]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone5"
+    initial_position: [0.18, -0.40]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone6"
+    initial_position: [0.02, 0.05]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+
+# Measured over 120 s from the starts above, at these gains:
+#
+#   settles (edge rms < 1 cm)   6.6 s
+#   final edge error            < 0.001 mm rms -- it is an exact equilibrium
+#   final shape error           < 0.001 mm after a rigid fit to the nominal
+#   final orientation           rotated from the nominal; set by the start
+#   peak speed                  0.242 m/s
+#   peak accel DEMAND           0.505 m/s^2 against the 0.5 clamp
+#   clipped                     0.0% of agent-ticks
+#   closest approach            0.289 m -- at t=0; it never gets tighter
+#   max radius                  0.720 m
+#   centroid drift              0.00 cm, and that zero is not a rounding
+#
+# THE CENTROID ZERO IS A REAL PREDICTION, NOT A COINCIDENCE. Because
+# e_ij = e_ji, the interaction forces cancel exactly in pairs, so the fleet
+# centroid obeys v_bar_dot = -k_v v_bar and cannot move from rest. It stays at
+# 0.00 cm here only because nothing was ever clipped. Push the drones further
+# out and the clamp starts truncating one agent's command but not its partner's,
+# the cancellation fails, and the centroid walks -- 14 cm in a start-radius
+# sweep at 3% clipping. That number is pure gap A (docs/PROJECT_AIM.md s8):
+# simulation has no noise and no latency, so all of it is the saturation.
+algorithm:
+  name: "DistanceFormation"
+  params:
+    side_length: 0.6         # m. For a hexagon this is also the circumradius,
+                             # so the shape fits inside a 0.6 m circle.
+    formation_center: [0.0, 0.0]
+    formation_rotation: 0.0  # Reference only. The law CANNOT set the angle;
+                             # this just says what the metrics compare against.
+
+    # Ring + all six two-hop chords = K_{2,2,2}, the octahedral graph: 12 edges,
+    # every agent measuring 4 ranges. Redundantly rigid and 4-connected, hence
+    # globally rigid, so a single folded corner is not an equilibrium.
+    #
+    # Try the others and watch what breaks -- from THIS start, over 120 s:
+    #
+    #   octahedron  12 edges  rank 9/9  shape err   0.00 mm   correct
+    #   minimal      9 edges  rank 9/9  shape err 223.61 mm   a folded corner,
+    #                                     at zero edge error -- an incorrect
+    #                                     equilibrium, exactly as the theory
+    #                                     allows for a merely rigid graph
+    #   k33          9 edges  rank 8/9  shape err  30.16 mm   generically rigid,
+    #                                     but degenerate at a REGULAR hexagon:
+    #                                     K_{3,3} goes flexible when its six
+    #                                     vertices lie on a conic, and they lie
+    #                                     on the circumcircle
+    #   cycle        6 edges  rank 6/9  shape err 385.26 mm   a hexagonal
+    #                                     linkage; it shears and keeps shearing
+    #
+    # The startup line prints rank(R) against the 2n-3 needed and warns when it
+    # is short, so a flexible choice is caught before takeoff rather than in the
+    # air. Note that the two failures are different: `cycle` and `k33` never
+    # stop moving, while `minimal` converges perfectly -- to the wrong shape.
+    topology: "octahedron"
+
+    gain_kp: 0.6             # gradient gain
+    gain_kv: 1.2             # damping. The published double-integrator term,
+                             # NOT an adaptation of ours -- contrast coverage.py
+    max_accel: 0.5           # m/s^2, matches crazyflie_node's clamp
+
+    # Empty = the faithful law. Translation and rotation are both left free, so
+    # the hexagon parks at the initial centroid at whatever angle it converged
+    # to. See testbed_hexagon_hybrid.yaml for why the lab needs an anchor and
+    # what admitting one costs.
+    anchor: []

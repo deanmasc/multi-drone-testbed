@@ -15,6 +15,14 @@ different for every algorithm. See docs/PROJECT_AIM.md section 7.
               offline Lloyd iteration converges to from the same start. That
               ratio is the "what optimality did hardware achieve" number.
 
+  DistanceFormation
+              per-edge distance error, and -- separately -- whether the shape
+              that satisfied those edges was the one asked for. Those come
+              apart: on a merely rigid graph a folded corner satisfies every
+              constraint exactly. Also the Lyapunov function, which the
+              continuous law forbids from rising, and the fleet centroid,
+              which the continuous law forbids from moving.
+
   Trochoidal  the two frequencies, their ratio, and the two radii, recovered
               at exit by FFT of the complex signal z = x + iy (a trochoid is a
               sum of two complex exponentials, so the spectrum has exactly two
@@ -737,6 +745,298 @@ class TrochoidalMetrics(MetricSet):
         return out
 
 
+class DistanceFormationMetrics(MetricSet):
+    """Did the shape converge -- and was it the RIGHT shape?
+
+    Distance-based formation control is the one algorithm here where the
+    obvious metric is actively misleading. Edge error going to zero does not
+    mean the hexagon formed: an incorrect equilibrium (a folded corner on a
+    merely rigid graph) satisfies every edge constraint exactly and reads as a
+    perfect score. So the edge errors are recorded, but the verdict comes from
+    fitting the flown positions onto the nominal shape and reporting what is
+    left over.
+
+    Four separate promises get scored, because they fail independently:
+
+      edge error    the constraint the law actually minimises
+      shape error   whether the constraints were satisfied by the intended
+                    realisation or by a different one
+      Lyapunov      W = (kp/4) sum e_ij^2 + (kv-weighted anchor term)
+                    + (1/2) sum ||v_i||^2 must be non-increasing. Every rise is
+                    energy the discrete, saturated implementation injected that
+                    the continuous law could not.
+      centroid      the interaction forces cancel in pairs, so from rest the
+                    fleet centroid cannot move. Drift is a direct measure of
+                    the acceleration clamp truncating one agent and not its
+                    partner (in simulation) plus everything physical (in the
+                    lab).
+
+    Orientation is recorded but is NOT scored. Distances cannot fix an angle,
+    so the final heading is set by the initial conditions and any value is
+    correct. It is here because "the hexagon came out rotated" is the first
+    thing an observer will report as a fault, and the record should be able to
+    say plainly that it is not one.
+    """
+
+    SETTLE_TOL = 0.01        # m of edge rms below which the shape counts as made
+    SHAPE_TOL = 0.05         # m of residual that separates "right shape" from
+                             # "converged to something else"
+
+    def __init__(self, ids, params):
+        super().__init__(ids, params)
+        self.ok = False
+        try:
+            from drone_testbed.algorithms.distance_formation import (
+                formation_spec, rigidity_report)
+        except ImportError:
+            # No workspace on this machine. Fall back to the pairwise columns
+            # so the record is still readable, rather than refusing to run.
+            self.targets = None
+            self.edges = []
+            self.dist = np.zeros(0)
+            self.rigidity = None
+            return
+
+        self.targets, self.edges, self.dist = formation_spec(params, ids)
+        self.rigidity = rigidity_report(self.targets, self.edges)
+        self.kp = float(params.get('gain_kp', 0.6))
+        self.kv = float(params.get('gain_kv', 1.0))
+        self.anchor_kp = float(params.get('anchor_gain_kp', 0.4))
+        anchor_ids = [str(a) for a in (params.get('anchor') or [])]
+        self.anchors = {ids.index(a): self.targets[ids.index(a)]
+                        for a in anchor_ids if a in ids}
+        self.ok = True
+
+    # -- geometry ----------------------------------------------------------
+
+    @staticmethod
+    def _rigid_fit(pos, target):
+        """Best rigid fit of the nominal shape onto the flown one.
+
+        Returns (residual rms, mirrored, rotation in degrees). Both handedness
+        options are tried because a set of distances cannot distinguish a shape
+        from its mirror image -- no graph can rule that out -- so a mirrored
+        formation is a correct outcome that must not be scored as a large
+        error. It is reported as a flag instead.
+        """
+        A = np.asarray(pos, float)
+        B = np.asarray(target, float)
+        A = A - A.mean(axis=0)
+        B = B - B.mean(axis=0)
+        best = None
+        for mirror in (1.0, -1.0):
+            Bm = B * np.array([1.0, mirror])
+            U, _, Vt = np.linalg.svd(Bm.T @ A)
+            R = U @ np.diag([1.0, np.sign(np.linalg.det(U @ Vt))]) @ Vt
+            err = float(np.sqrt(((Bm @ R - A) ** 2).sum(axis=1).mean()))
+            ang = math.degrees(math.atan2(R[1, 0], R[0, 0]))
+            if best is None or err < best[0]:
+                best = (err, mirror < 0, ang)
+        return best
+
+    def columns(self):
+        cols = ['t']
+        cols += [f'e_{self.ids[a]}_{self.ids[b]}' for a, b in self.edges]
+        cols += ['edge_rms', 'edge_max', 'd_min', 'V_pot', 'K_kin', 'W_lyap',
+                 'shape_err', 'mirrored', 'orient_deg', 'cx', 'cy']
+        cols += [f'{ax}_{i}' for i in self.ids for ax in ('x', 'y')]
+        return cols
+
+    def row(self, t, pos, vel):
+        pos = np.asarray(pos, float)
+        vel = np.asarray(vel, float)
+
+        errs = np.array([np.linalg.norm(pos[a] - pos[b]) - d
+                         for (a, b), d in zip(self.edges, self.dist)])
+        # The potential is written in the squared-distance error the law
+        # actually descends, not in the length error above -- they are not the
+        # same function and only the first is the Lyapunov candidate.
+        sq = np.array([float((pos[a] - pos[b]) @ (pos[a] - pos[b])) - d * d
+                       for (a, b), d in zip(self.edges, self.dist)])
+        V = 0.25 * self.kp * float((sq ** 2).sum())
+        for k, target in self.anchors.items():
+            V += 0.5 * self.anchor_kp * float((pos[k] - target) @ (pos[k] - target))
+        K = 0.5 * float((vel ** 2).sum())
+
+        gaps = [np.linalg.norm(pos[a] - pos[b]) for a, b in self.pairs]
+        shape_err, mirrored, orient = self._rigid_fit(pos, self.targets)
+        centroid = pos.mean(axis=0)
+
+        return ([t] + [abs(float(e)) for e in errs] +
+                [float(np.sqrt((errs ** 2).mean())), float(np.abs(errs).max()),
+                 float(min(gaps)), V, K, V + K,
+                 shape_err, float(mirrored), orient,
+                 float(centroid[0]), float(centroid[1])] +
+                [float(v) for v in pos.reshape(-1)])
+
+    # -- analysis ----------------------------------------------------------
+
+    def _rigidity_lines(self):
+        r = self.rigidity
+        kind = ('minimally rigid' if r['rigid'] and r['minimal']
+                else 'rigid' if r['rigid'] else 'FLEXIBLE')
+        out = [
+            '  THE FRAMEWORK THAT WAS FLOWN',
+            f'    agents / edges            {len(self.ids)} / {r["n_edges"]}',
+            f'    rank R(p)                 {r["rank"]} of {r["needed"]} '
+            f'needed -- {kind}',
+            f'    rigidity margin           {r["margin"]:.3f}',
+        ]
+        if not r['rigid']:
+            out += [
+                '',
+                '    WARNING: the target framework is not infinitesimally',
+                f'    rigid -- {r["needed"] - r["rank"]} flex mode(s) beyond the '
+                'trivial ones are',
+                '    unpenalised by the distance constraints, so convergence to',
+                '    this shape was never promised. Any shape error below is a',
+                '    property of the graph, not a result about the hardware.',
+            ]
+        elif r['minimal']:
+            out += [
+                '    minimally rigid: |E| = 2n-3, so the graph is rigid but not',
+                '    globally rigid and incorrect equilibria (a folded corner)',
+                '    exist. Read the shape error, not the edge error.',
+            ]
+        return out
+
+    def summarise(self, t, data, pos_hist):
+        if not self.ok:
+            return ['  the drone_testbed package was not importable, so the '
+                    'shape analysis could not run']
+        c = {name: i for i, name in enumerate(self.columns())}
+        tail = slice(max(0, len(t) - max(1, int(0.1 * len(t))) - 1), None)
+
+        edge_rms = data[:, c['edge_rms']]
+        shape = data[:, c['shape_err']]
+        d_min = data[:, c['d_min']]
+        W = data[:, c['W_lyap']]
+        worst = int(np.argmin(d_min))
+
+        out = ['DISTANCE-BASED FORMATION -- did the theorem\'s promises hold?',
+               '']
+        out += self._rigidity_lines()
+
+        out += [
+            '',
+            '  EDGE CONSTRAINTS (the quantity the law minimises)',
+            f'    final rms error           {edge_rms[tail].mean() * 1000:.2f} mm',
+            f'    final worst edge          {data[tail, c["edge_max"]].mean() * 1000:.2f} mm',
+            f'    peak during run           {data[:, c["edge_max"]].max() * 1000:.1f} mm',
+        ]
+        bad = np.where(edge_rms > self.SETTLE_TOL)[0]
+        if len(bad) == 0:
+            out.append('    already within tolerance at the first sample')
+        elif bad[-1] < len(t) - 1:
+            out.append(f'    settled below {self.SETTLE_TOL * 1000:.0f} mm rms   '
+                       f'at t = {t[bad[-1] + 1]:.1f} s')
+        else:
+            out.append('    NEVER settled -- still above tolerance at the end')
+
+        final_shape = float(shape[tail].mean())
+        mirrored = data[tail, c['mirrored']].mean() > 0.5
+        out += [
+            '',
+            '  WAS IT THE RIGHT SHAPE? (rigid fit of the nominal onto the flown',
+            '  positions; this is the metric edge error cannot give you)',
+            f'    final residual            {final_shape * 1000:.2f} mm rms',
+            f'    handedness                '
+            f'{"MIRRORED vs the nominal" if mirrored else "same as the nominal"}',
+        ]
+        if mirrored:
+            out.append('      -- not a fault. Ranges cannot distinguish a shape')
+            out.append('         from its mirror image, whatever the graph.')
+        if final_shape > self.SHAPE_TOL and edge_rms[tail].mean() < self.SETTLE_TOL:
+            out += [
+                '',
+                '    *** INCORRECT EQUILIBRIUM ***',
+                '    Every edge is satisfied and the shape is still wrong, so',
+                '    the fleet came to rest at a configuration that is not the',
+                '    one asked for. NOT a hardware failure -- check the topology',
+                '    before attributing any of it to something physical.',
+            ]
+            out.append(
+                '    The graph is flexible, so this was expected.'
+                if not self.rigidity['rigid'] else
+                '    The graph is rigid but not globally rigid, so this is the'
+            )
+            if self.rigidity['rigid']:
+                out.append('    folded-corner equilibrium a minimal graph '
+                           'admits. `octahedron`')
+                out.append('    is globally rigid and does not have it.')
+        elif final_shape > self.SHAPE_TOL:
+            out.append('    shape not reached, and the edges have not settled '
+                       'either -- still converging, or unstable')
+
+        # -- Lyapunov -------------------------------------------------------
+        #
+        # The continuous law has W_dot = -kv sum||v||^2 <= 0. Anything that
+        # makes W rise is the implementation, not the law: the zero-order hold
+        # between control ticks, and the acceleration clamp truncating the
+        # gradient. In the lab, differentiated-VICON velocity noise adds a
+        # third source, so compare the rise here against the same config run
+        # through tools/sim_baseline.py before blaming the hardware.
+        dW = np.diff(W)
+        # Once the fleet has settled, W sits at ~1e-17 and its differences are
+        # pure float noise that alternates sign. Counting those as violations
+        # reported "W rose on 0.9% of ticks" for a run that was in fact exactly
+        # monotone, so a rise only counts if it is significant against the
+        # scale of the run.
+        floor = 1e-6 * max(float(W.max()), 1e-30)
+        rises = dW[dW > floor]
+        out += [
+            '',
+            '  LYAPUNOV FUNCTION W = potential + kinetic (must not increase)',
+            f'    W at start / end          {W[0]:.4f} -> {W[-1]:.4f}',
+            f'    ticks where W rose        {len(rises)} of {len(dW)} '
+            f'({100.0 * len(rises) / max(len(dW), 1):.1f}%)   '
+            f'[rises below {floor:.2e} ignored as float noise]',
+        ]
+        if len(rises):
+            out.append(f'    largest single rise       {rises.max():.3e}'
+                       f'  ({100.0 * rises.max() / max(float(W.max()), 1e-30):.2f}% of W_max)')
+            out.append(f'    total energy injected     {rises.sum():.3e}')
+            out.append('    W is not monotone. In simulation that is the '
+                       'zero-order hold and the')
+            out.append('    accel clamp (gap A); in the lab add velocity '
+                       'estimation noise (gap B).')
+            out.append('    Compare against tools/sim_baseline.py on the same '
+                       'config to split them.')
+        else:
+            out.append('    monotonically decreasing, as the theory requires')
+
+        # -- the invariants the law says are unobservable --------------------
+        c0 = data[0, [c['cx'], c['cy']]]
+        c1 = data[tail, :][:, [c['cx'], c['cy']]].mean(axis=0)
+        drift = float(np.linalg.norm(c1 - c0))
+        out += [
+            '',
+            '  CENTROID (interaction forces cancel in pairs, so from rest the',
+            '  centroid cannot move; drift measures what broke that)',
+            f'    start                     [{c0[0]:+.3f}, {c0[1]:+.3f}] m',
+            f'    end                       [{c1[0]:+.3f}, {c1[1]:+.3f}] m',
+            f'    drift                     {drift * 100:.2f} cm',
+        ]
+        if self.anchors:
+            out.append('    NOTE: anchor is set, so the centroid was pinned '
+                       'deliberately and this')
+            out.append('          number is not a clean invariance test.')
+
+        out += [
+            '',
+            '  ORIENTATION (free -- ranges cannot set an angle; recorded, not scored)',
+            f'    final heading             {data[tail, c["orient_deg"]].mean():+.1f} '
+            'deg from the nominal',
+            '',
+            '  SEPARATION',
+            f'    smallest gap ever         {d_min[worst]:.4f} m  at t = {t[worst]:.1f} s',
+            f'    ticks under {NEAR_MISS:.2f} m        '
+            f'{int((d_min < NEAR_MISS).sum())} of {len(t)}',
+            f'    final smallest gap        {d_min[tail].mean():.4f} m',
+        ]
+        return out
+
+
 class GenericMetrics(MetricSet):
     """Fallback: positions and pairwise distances, for algorithms without a
     dedicated metric set. Enough to reconstruct most things after the fact."""
@@ -777,6 +1077,8 @@ def make_metrics(algo_name, ids, params):
         return CoverageMetrics(ids, params)
     if 'trochoidal' in key:
         return TrochoidalMetrics(ids, params)
+    if key == 'distanceformation':
+        return DistanceFormationMetrics(ids, params)
     return GenericMetrics(ids, params)
 
 
