@@ -1088,6 +1088,12 @@ class MetricsRecorder(Node):
         self._pos[drone_id] = np.array(msg.data[0:2], dtype=float)
         self._vel[drone_id] = np.array(msg.data[2:4], dtype=float)
 
+    def _poses_cb(self, msg):
+        for named in msg.poses:
+            did = self._z_alias.get(named.name)
+            if did is not None:
+                self._z[did] = float(named.pose.position.z)
+
     def _phase_cb(self, drone_id, msg):
         if math.isfinite(msg.data):
             self._phase[drone_id] = msg.data
