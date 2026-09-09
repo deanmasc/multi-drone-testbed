@@ -468,6 +468,7 @@ Phase `theta_i` is now the absolute orbital angle. Drone order assigns an offset
 
 ```text
 theta_dot_i = omega + phase_gain * sum_j sin((theta_j-delta_j) - (theta_i-delta_i))
+    + tracking_phase_gain * min(norm(p_i-center)/radius, 1) * sin(actual_angle_i-theta_i)
 p_des_i = center + radius*e(theta_i)
 v_des_i = radius*theta_dot_i*t(theta_i)
 u_i = -radius*theta_dot_i^2*e(theta_i)
@@ -482,6 +483,11 @@ tangential acceleration during synchronization is handled by feedback. Commands
 are limited by Euclidean norm to `max_accel`. `radius` is the constant ring radius
 and `omega` is its synchronized angular speed. The old breathing `amplitude`
 parameter is no longer used.
+
+Each step also checks the drone's actual angle about `center`. This slows its
+phase when it falls behind and advances it when it gets ahead, allowing neighbor
+coupling to respond to physical tracking errors. The check fades to zero at the
+center, where angle is undefined. Set `tracking_phase_gain: 0` to disable it.
 
 `initial_phases` now specifies absolute orbital angles in radians. The example
 uses reproducible uneven angles and matching initial positions to show the ring

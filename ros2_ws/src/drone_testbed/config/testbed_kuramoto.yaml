@@ -24,6 +24,7 @@ algorithm:
     radius: 0.65
     omega: 0.35                 # rad/s counterclockwise; period about 18 seconds
     phase_gain: 0.25
+    tracking_phase_gain: 0.4    # check actual orbital angle; slow phase when motion lags
     position_gain: 1.0
     formation_gain: 0.8
     velocity_gain: 2.0

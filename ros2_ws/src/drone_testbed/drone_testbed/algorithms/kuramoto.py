@@ -33,7 +33,7 @@ class KuramotoAgent:
         if self.center.shape != (2,) or not np.all(np.isfinite(self.center)):
             raise ValueError('center must contain two finite coordinates')
         for key, default in [('radius', .65), ('omega', .35),
-                             ('phase_gain', .25), ('position_gain', 1.),
+                             ('phase_gain', .25), ('tracking_phase_gain', .4), ('position_gain', 1.),
                              ('formation_gain', .8), ('velocity_gain', 2.), ('max_accel', .5)]:
             value = float(params.get(key, default))
             if not math.isfinite(value):
@@ -41,7 +41,7 @@ class KuramotoAgent:
             setattr(self, key, value)
         if self.radius <= 0 or self.max_accel <= 0 or self.velocity_gain <= 0:
             raise ValueError('require radius > 0, max_accel > 0, velocity_gain > 0')
-        if min(self.phase_gain, self.position_gain, self.formation_gain) < 0:
+        if min(self.phase_gain, self.tracking_phase_gain, self.position_gain, self.formation_gain) < 0:
             raise ValueError('coupling and position gains must be nonnegative')
         self.initial_phase = float(params.get('initial_phases', {}).get(drone_id, self.phase_offsets[drone_id]))
         if not math.isfinite(self.initial_phase):
@@ -59,6 +59,15 @@ class KuramotoAgent:
             math.sin((neighbor_phases[d] - self.phase_offsets[d])
                      - (self.phase - own_offset))
             for d in self.neighbors if d in neighbor_phases)
+        # Check the physical orbital angle on every step. A lagging drone slows
+        # its oscillator, feeding the motion error back into neighbor coupling.
+        # Near the center the angle is undefined; smoothly suppress this check.
+        displacement = state.position - self.center
+        distance = float(np.linalg.norm(displacement))
+        if distance > 1e-9:
+            actual_phase = math.atan2(displacement[1], displacement[0])
+            phase_rate += (self.tracking_phase_gain * min(distance / self.radius, 1.)
+                           * math.sin(actual_phase - self.phase))
         radial = np.array([math.cos(self.phase), math.sin(self.phase)])
         tangent = np.array([-radial[1], radial[0]])
         target = self.center + self.radius * radial

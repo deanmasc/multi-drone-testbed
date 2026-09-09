@@ -8,6 +8,18 @@ from drone_testbed.utils.types import DroneState
 
 
 class KuramotoTests(unittest.TestCase):
+    def test_phase_checks_actual_orbital_progress(self):
+        for initial_phase in (0., 2 * math.pi - .05):
+            for error in (-.3, .3):
+                agent = KuramotoAgent('a', {'initial_phases': {'a': initial_phase},
+                                            'center': [1., -2.]}, ['a'])
+                angle = initial_phase + error
+                position = agent.center + agent.radius * np.array([math.cos(angle), math.sin(angle)])
+                agent.step(DroneState('a', position), {}, {}, .1)
+                expected = (initial_phase + .1 * (agent.omega + agent.tracking_phase_gain
+                                                 * math.sin(error))) % (2 * math.pi)
+                self.assertAlmostEqual(agent.phase, expected)
+
     def test_non_neighbor_cannot_affect_local_control(self):
         params = {'adjacency': {'a': ['b']}}
         a = KuramotoAgent('a', params, ['a', 'b', 'c'])
@@ -72,7 +84,8 @@ class KuramotoTests(unittest.TestCase):
         self.assertTrue(np.all(np.isfinite(out.acceleration)))
         self.assertAlmostEqual(agent.phase, .035)
         for params in [{'radius': 0}, {'max_accel': 0},
-                       {'adjacency': {'a': ['unknown']}}, {'omega': math.nan}]:
+                       {'adjacency': {'a': ['unknown']}}, {'omega': math.nan},
+                       {'tracking_phase_gain': -1}, {'tracking_phase_gain': math.nan}]:
             with self.assertRaises(ValueError):
                 KuramotoAgent('a', params, ['a', 'b'])
 
