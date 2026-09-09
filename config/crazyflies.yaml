@@ -95,8 +95,13 @@ robots:
   # (0.354 m); every trio puts two aircraft within 12 cm of each other in the
   # xy plane, and drone3-drone4 pass within 2 cm. There is no collision term
   # in TrochoidalConsensus -- it will fly them together and report success.
+  #
+  # DISABLED 2026-09-09. Only drone_1 and drone_2 are flying; with this true
+  # the server waits on an airframe that is not powered on and the launch
+  # stalls looking for it. Set it back to true when a third drone is actually
+  # in the air.
   drone_3:
-    enabled: true
+    enabled: false
     uri: radio://0/20/2M/E7E7E7E7E9
     initial_position: [-0.186, -0.034, 0.0158]
     type: cf21
