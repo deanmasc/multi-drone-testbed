@@ -76,8 +76,18 @@ drones:
     initial_velocity: [0.0, 0.0]
     role: "follower"
 
-# Gains: theta = 2.28488, beta = 1 time-rescaled 6x by
-# tools/design_consensus_gains.py --theta 2.28488 --rescale 6 --target-radius 0.38
+# Gains: theta = 2.28488, beta = 1 time-rescaled 10x by
+# tools/design_consensus_gains.py --theta 2.28488 --rescale 10
+#
+# RESCALE RAISED 6 -> 10 on 2026-09-09, to fly the pattern faster. The point is
+# to widen the gap to the theory on purpose: the control law assumes a point
+# mass that accelerates instantly in any direction, and a real quadrotor has to
+# tilt first. Tilt angle goes as the commanded acceleration, which goes as the
+# SQUARE of this factor, so speeding the pattern up is the cleanest way to load
+# that assumption until it visibly breaks. Peak tilt is about 2.2 deg at
+# rescale 6 and 6.2 deg at rescale 10.
+#
+# To go back, restore the rescale-6 block kept at the bottom of this comment.
 #
 # The rescaling is exact, not an approximation. The closed loop is linear, so
 # mapping (alpha, beta, kappa) -> (c^2*alpha, c*beta, c^2*kappa) multiplies
@@ -86,26 +96,39 @@ drones:
 # is what makes this flyable -- as published the periods are 114s and 381s and
 # the figure is a snapshot at t = 2500s.
 #
-# Measured from the gains actually written below (rescale 6), by computing the
-# closed-loop eigenvalues and by running the algorithm:
+# Measured from the gains actually written below (rescale 10), by computing the
+# closed-loop eigenvalues and by running the design tool on THESE starting
+# positions (initial_position above is unchanged -- the rescaling does not move
+# the marks, so the floor tape stays where it is):
 #   exactly 2 pairs on the imaginary axis  <- the trochoid condition holds
-#   slow period 63.53s, fast period 19.06s, ratio 3.3337 (= 10/3)
-#   transient settles in about 12.5s (slowest decaying pole -0.239)
-#   steady-state envelope 0.397m, and the same including the transient
+#   slow period 38.1s, fast period 11.4s, ratio 3.3337 (= 10/3)
+#   steady-state envelope 0.355m, 0.394m including the transient
+#   per-agent r_max  0.295 / 0.235 / 0.173 / 0.367 m for drones 1/2/3/4
+#
+# The envelope SHRINKS slightly as the clock speeds up (0.380m at rescale 6),
+# which buys a little more margin against the geofence excursion seen on the
+# long runs.
 #
 # HOW LONG TO FLY. The frequency ratio is 10/3, so the curve only closes after
-# the LCM of the two periods -- 3 slow periods, 190.6s -- plus the 12.5s
-# transient. Use flight_duration:=205.0. At 60s you see less than one slow
-# period and the shape will not have closed.
-#   That is a 3.5-minute flight. Start on a fresh battery and watch for the
-#   3.8V warning in config/crazyflies.yaml; there is no low-battery abort in
-#   crazyflie_node yet.
+# the LCM of the two periods -- 3 slow periods, 114.3s -- plus the transient.
+# Use flight_duration:=125.0. At 60s you see less than two slow periods and the
+# shape will not have closed.
+#   Faster is also why this rescale is worth having: 125s instead of 205s is
+#   most of a battery back, and the trochoidal radius grows slowly on hardware
+#   (marginal stability -- there is no margin by construction), so the sooner
+#   the curve closes the less of it is eaten by that growth.
 #
-# THE ACCELERATION CLAMP. Peak demand at these gains is 0.385 m/s^2, which is
-# UNDER the 0.5 clamp, so nothing is clipped at any point. (An earlier note here
-# warned of 0.93 m/s^2 clipping the first few seconds; that was true of the
-# --rescale 8 / --target-radius 0.45 gains this file used to carry, not of the
-# ones below.) Peak speed is 0.081 m/s -- this is a slow, gentle pattern.
+# THE ACCELERATION CLAMP. Peak demand at these gains is 1.069 m/s^2 against a
+# clamp of 1.8, so nothing is clipped. THE MARGIN IS THE POINT, not a rounding
+# up. This law's three terms very nearly cancel each other -- in simulation the
+# alpha term alone exceeds the old 0.5 clamp 21.6% of the time while the SUM
+# peaks at 0.111 m/s^2. The clamp acts on the sum, so clipping does not shave a
+# large command slightly, it destroys a cancellation between large terms and
+# the result bears no relation to the control law. That is what happened on
+# 2026-09-02, where the command saturated from t=2.0s and the published law
+# never actually ran. Do not set max_accel just above the predicted peak.
+#
+# Peak speed is 0.133 m/s (was 0.081 at rescale 6), well inside the 0.7 clamp.
 #
 # SEPARATION -- READ THIS BEFORE FLYING MORE THAN ONE REAL DRONE. All four
 # agents orbit the SAME centre with different radii, so unlike a formation law
@@ -124,20 +147,31 @@ drones:
 # collision-avoidance term in this control law -- it will fly them into each
 # other and report success.
 #
-# CAUTION on beta. At 8.0 it is eight times the damping of the cycle config, and
-# it multiplies the MEASURED velocity -- which mocap_state_node produces by
-# differentiating position with no filtering at all. Velocity noise reaches the
-# acceleration command amplified by that factor. If the first flight shows
-# command chatter, that is the cause: filter the mocap velocity, or drop to
-# --rescale 6 and lengthen the flight.
+# CAUTION on beta -- THIS IS THE THING THAT LIMITS HOW FAST YOU CAN GO, not
+# thrust. beta multiplies the MEASURED velocity, and mocap_state_node produces
+# that by fitting a line through recent positions, so it carries the amplified
+# mocap noise. beta scales linearly with the rescale factor: at 10.0 it puts
+# 67% more velocity noise into the acceleration command than the rescale-6
+# gains did, and those already carried a chatter warning.
+#
+# So if the first flight at these gains shows command chatter or audible motor
+# hunting, that is the cause and it is not a reason to abandon the rescale.
+# Lengthen mocap_state_node's velocity_window, or set velocity_fit=current
+# (a quadratic read at the newest sample -- lower lag AND lower error than the
+# default line fit at this noise level), before dropping back to rescale 6.
 algorithm:
   name: "TrochoidalConsensus"
   params:
-    alpha: 1.8231
-    beta:  6.0000
-    kappa: 0.3272
+    # rescale 10. Previous rescale-6 values, if you need to go back:
+    #   alpha: 1.8231   beta: 6.0000   kappa: 0.3272   max_accel: 0.5
+    #   (and flight_duration:=205.0)
+    alpha: 5.0642
+    beta:  10.0000
+    kappa: 0.9089
     theta: 2.2849
-    max_accel: 0.5
+    # 1.8, not 1.1: see THE ACCELERATION CLAMP above. Clipping this law does
+    # not degrade it gracefully.
+    max_accel: 1.8
     # Weighted digraph. Each entry is {observed_drone: weight}; the weights are
     # the a_ij of the control law and are exactly what makes the agents differ.
     # An unweighted list form is still accepted and means a_ij = 1.
