@@ -1,0 +1,19 @@
+simulation:
+  dt: 0.1
+  control_rate: 5.0
+  sim_rate: 10.0
+  bounds: 2.0
+
+drones:
+  - id: "drone1"
+    initial_position: [0.0, 0.0]
+    initial_velocity: [0.0, 0.0]
+    role: "leader"
+
+# Dummy algorithm: prints VICON position/velocity to the terminal,
+# always commands zero acceleration. Use this to validate the
+# VICON -> mocap_state_node -> algorithm_manager pipeline before
+# running anything that can move the drone.
+algorithm:
+  name: "PrintState"
+  params: {}

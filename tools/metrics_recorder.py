@@ -6,6 +6,9 @@ a path -- it promises cohesion, no collisions, and matched velocities. So path
 error tests something no paper claimed, and the quantity worth recording is
 different for every algorithm. See docs/PROJECT_AIM.md section 7.
 
+  Kuramoto    oscillator phases, wrapped pair differences, order parameter R,
+              five-second synchronization hold, radius and position tracking.
+
   Flocking    pairwise spacing against the target lattice, the smallest gap
               ever reached (the collision-avoidance promise), velocity spread
               across the fleet, and whether the graph stayed connected.
@@ -67,7 +70,7 @@ if os.path.isdir(_PKG) and _PKG not in sys.path:
 try:
     import rclpy
     from rclpy.node import Node
-    from std_msgs.msg import Float64MultiArray, String
+    from std_msgs.msg import Float64MultiArray, Float64, Int32, String
     HAVE_ROS = True
 except ImportError:                         # pragma: no cover
     HAVE_ROS = False
@@ -804,6 +807,118 @@ class TrochoidalMetrics(MetricSet):
         return out
 
 
+class KuramotoMetrics(MetricSet):
+    """Phase synchronization and physical tracking, with explicit data validity."""
+
+    def __init__(self, ids, params):
+        super().__init__(ids, params)
+        self.center = np.asarray(params.get('center', [0., 0.]), dtype=float)
+        self.radius = float(params.get('radius', .65))
+        self.offsets = 2 * np.pi * np.arange(len(ids)) / len(ids)
+        self.max_age = .5
+        self.max_skew = .1
+        self.sample_period = .1
+
+    def columns(self):
+        cols = ['t', 'active']
+        for d in self.ids:
+            cols += [f'phase_{d}', f'phase_age_{d}', f'state_age_{d}',
+                     f'x_{d}', f'y_{d}', f'radius_{d}', f'radius_des_{d}',
+                     f'position_err_{d}']
+        cols += [f'phase_diff_{self.ids[a]}_{self.ids[b]}' for a, b in self.pairs]
+        cols += [f'phase_offset_error_{self.ids[a]}_{self.ids[b]}' for a, b in self.pairs]
+        return cols + ['phase_valid', 'order_R', 'phase_max_error',
+                       'tracking_rms', 'radius_spread', 'd_min',
+                       'angular_spacing_rms', 'angular_spacing_max_error', 'radius_rms']
+
+    def row(self, t, pos, vel, phases=None, phase_ages=None, state_ages=None, active=False):
+        n = len(self.ids)
+        phases = np.full(n, np.nan) if phases is None else np.asarray(phases)
+        phase_ages = np.full(n, np.inf) if phase_ages is None else np.asarray(phase_ages)
+        state_ages = np.full(n, np.inf) if state_ages is None else np.asarray(state_ages)
+        phase_fresh = np.isfinite(phases) & (phase_ages >= 0) & (phase_ages <= self.max_age)
+        state_fresh = np.all(np.isfinite(pos), axis=1) & (state_ages >= 0) & (state_ages <= self.max_age)
+        phase_valid = bool(phase_fresh.all() and np.ptp(phase_ages) <= self.max_skew)
+        physical_valid = bool(state_fresh.all() and np.ptp(state_ages) <= self.max_skew)
+        aligned = phase_valid and physical_valid and np.ptp(np.r_[phase_ages, state_ages]) <= self.max_skew
+        radii = np.linalg.norm(pos - self.center, axis=1)
+        desired = np.full(n, self.radius)
+        targets = self.center + self.radius * np.column_stack([np.cos(phases), np.sin(phases)])
+        errors = np.linalg.norm(pos - targets, axis=1)
+        out = [t, float(active)]
+        for k in range(n):
+            local_valid = phase_fresh[k] and state_fresh[k] and abs(phase_ages[k] - state_ages[k]) <= self.max_skew
+            out += [phases[k], phase_ages[k], state_ages[k], *pos[k],
+                    radii[k] if state_fresh[k] else np.nan,
+                    desired[k] if phase_fresh[k] else np.nan,
+                    errors[k] if local_valid else np.nan]
+        diffs = [float(np.arctan2(np.sin(phases[a] - phases[b]),
+                                 np.cos(phases[a] - phases[b]))) if phase_valid else np.nan
+                 for a, b in self.pairs]
+        corrected = phases - self.offsets
+        offset_errors = [float(np.arctan2(np.sin(corrected[a] - corrected[b]),
+                                         np.cos(corrected[a] - corrected[b])))
+                         if phase_valid else np.nan for a, b in self.pairs]
+        order = float(abs(np.mean(np.exp(1j * corrected)))) if phase_valid else np.nan
+        # Compare directed gaps in assigned drone order, including the last-to-first
+        # edge. Angles at the center are undefined, so don't report spacing there.
+        angles = np.arctan2(pos[:, 1] - self.center[1], pos[:, 0] - self.center[0])
+        gap_error = np.roll(angles, -1) - angles - 2 * np.pi / n
+        gap_error = np.arctan2(np.sin(gap_error), np.cos(gap_error))
+        angular_valid = physical_valid and bool(np.all(radii > 1e-6))
+        distances = [np.linalg.norm(pos[a] - pos[b]) for a, b in self.pairs]
+        return out + diffs + offset_errors + [float(phase_valid), order,
+                              max(map(abs, offset_errors), default=0.) if phase_valid else np.nan,
+                              float(np.sqrt(np.mean(errors**2))) if aligned else np.nan,
+                              float(np.std(radii)) if physical_valid else np.nan,
+                              min(distances, default=np.nan) if physical_valid else np.nan,
+                              float(np.sqrt(np.mean(gap_error**2))) if angular_valid else np.nan,
+                              float(np.max(np.abs(gap_error))) if angular_valid else np.nan,
+                              float(np.sqrt(np.mean((radii - self.radius)**2))) if physical_valid else np.nan]
+
+    def summarise(self, t, data, pos_hist):
+        c = {name: i for i, name in enumerate(self.columns())}
+        active = data[:, c['active']] > 0
+        order = data[:, c['order_R']]
+        valid = active & np.isfinite(order)
+        out = ['KURAMOTO -- oscillator synchronization and physical formation tracking',
+               '  Phase/spacing units: radians; distance units: metres.',
+               '  order_R and phase_max_error use phases minus assigned polygon offsets.',
+               '  Latest receipt-time samples; no source timestamps or delay compensation.',
+               f'  Validity limits: age <= {self.max_age}s, receipt skew <= {self.max_skew}s.',
+               f'  valid active phase samples  {valid.sum()} of {active.sum()}']
+        if valid.any():
+            out += [f'  final valid order R         {order[valid][-1]:.6f}',
+                    f'  mean active order R         {order[valid].mean():.6f}']
+        # Missing/stale samples, stop/reset and recorder gaps break the hold.
+        begin = None
+        settled = None
+        for k in range(len(t)):
+            if not valid[k] or order[k] <= .99:
+                begin = None
+                continue
+            if begin is None or (k and t[k] - t[k-1] > 1.5 * self.sample_period):
+                begin = t[k]
+            if t[k] - begin >= 5.:
+                settled = begin
+                break
+        out.append('  first R > 0.99 held for 5s  ' +
+                   (f't = {settled:.3f}s (record clock)' if settled is not None else 'not observed'))
+        for name in ['phase_max_error', 'angular_spacing_rms', 'angular_spacing_max_error',
+                     'tracking_rms', 'radius_rms', 'radius_spread', 'd_min']:
+            values = data[active, c[name]]
+            values = values[np.isfinite(values)]
+            if len(values):
+                out.append(f'  {name}: mean={values.mean():.6f}, min={values.min():.6f}, max={values.max():.6f}')
+        for d in self.ids:
+            values = data[active, c[f'radius_{d}']]
+            values = values[np.isfinite(values)]
+            if len(values):
+                out.append(f'  {d} measured radius range  {values.min():.4f} .. {values.max():.4f} m')
+        out.append('  Phase agreement alone does not establish physical rotating-ring tracking.')
+        return out
+
+
 class GenericMetrics(MetricSet):
     """Fallback: positions and pairwise distances, for algorithms without a
     dedicated metric set. Enough to reconstruct most things after the fact."""
@@ -838,6 +953,8 @@ class GenericMetrics(MetricSet):
 
 def make_metrics(algo_name, ids, params):
     key = algo_name.lower()
+    if key == 'kuramotoformation':
+        return KuramotoMetrics(ids, params)
     if key == 'flocking':
         return FlockingMetrics(ids, params)
     if key == 'coverage':
@@ -897,6 +1014,16 @@ class MetricsRecorder(Node):
         self.algo = algo_cfg.get('name', 'Unknown')
         self.metrics = make_metrics(self.algo, self.ids,
                                     algo_cfg.get('params', {}) or {})
+        self._phase = {i: float('nan') for i in self.ids}
+        self._phase_time = {i: float('-inf') for i in self.ids}
+        self._state_time = {i: float('-inf') for i in self.ids}
+        self._active = False
+        if isinstance(self.metrics, KuramotoMetrics):
+            self.metrics.sample_period = 1.0 / rate
+            for i in self.ids:
+                self.create_subscription(Float64, f'/{i}/phase',
+                                         lambda msg, did=i: self._phase_cb(did, msg), 10)
+            self.create_subscription(Int32, '/sim/control', self._control_cb, 10)
         self.path = path
         self.skip = skip
 
@@ -943,19 +1070,34 @@ class MetricsRecorder(Node):
 
     def _write_header(self, cfg, rate):
         write_header(self._fh, cfg, self.algo, self.ids,
-                     self.metrics.all_columns(), rate)
+                     self.metrics.columns(), rate)
+        if isinstance(self.metrics, KuramotoMetrics):
+            self._fh.write(
+                '# Kuramoto: phases radians; positions/errors metres; ages seconds.\n'
+                '# Latest receipt-time samples, not source-time synchronized.\n'
+                '# Metrics require age <= 0.5s and receipt skew <= 0.1s.\n'
+                '# Raw phases/positions retain last values; inspect ages for freshness.\n'
+                '# active follows /sim/control; missing lifecycle start excludes summary.\n'
+                '# Synchronization: R > 0.99 for 5s; invalid samples/gaps break hold.\n')
+            self._fh.flush()
 
     def _state_cb(self, drone_id, msg):
-        if len(msg.data) < 4:
+        if len(msg.data) < 4 or not np.all(np.isfinite(msg.data[:4])):
             return
+        self._state_time[drone_id] = self.get_clock().now().nanoseconds * 1e-9
         self._pos[drone_id] = np.array(msg.data[0:2], dtype=float)
         self._vel[drone_id] = np.array(msg.data[2:4], dtype=float)
 
-    def _poses_cb(self, msg):
-        for named in msg.poses:
-            did = self._z_alias.get(named.name)
-            if did is not None:
-                self._z[did] = float(named.pose.position.z)
+    def _phase_cb(self, drone_id, msg):
+        if math.isfinite(msg.data):
+            self._phase[drone_id] = msg.data
+            self._phase_time[drone_id] = self.get_clock().now().nanoseconds * 1e-9
+
+    def _control_cb(self, msg):
+        self._active = msg.data == 1
+        if msg.data == 2:
+            self._phase_time = {i: float('-inf') for i in self.ids}
+            self._state_time = {i: float('-inf') for i in self.ids}
 
     def _abort_cb(self, msg):
         if self._aborted is None:
@@ -988,8 +1130,13 @@ class MetricsRecorder(Node):
             else:
                 self._moving_since = None
 
-        row = self.metrics.full_row(t, pos, vel,
-                                    [self._z[i] for i in self.ids])
+        if isinstance(self.metrics, KuramotoMetrics):
+            row = self.metrics.row(t, pos, vel,
+                [self._phase[i] for i in self.ids],
+                [now - self._phase_time[i] for i in self.ids],
+                [now - self._state_time[i] for i in self.ids], self._active)
+        else:
+            row = self.metrics.row(t, pos, vel)
         if row is None:
             return
         self._rows.append(row)
@@ -1019,6 +1166,8 @@ class MetricsRecorder(Node):
 
         # Analyse from the moment of motion, not from node start.
         start = self.skip if self.skip is not None else (self._moving_at or 0.0)
+        if isinstance(self.metrics, KuramotoMetrics) and self.skip is None:
+            start = 0.0  # Lifecycle column excludes pre-start rows from sync analysis.
         keep = t >= start
         if keep.sum() < 4:
             keep = np.ones(len(t), dtype=bool)
@@ -1147,6 +1296,10 @@ def main():
     stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     path = os.path.join(a.out_dir, f'{algo.lower()}_{stamp}.txt')
 
+    if not HAVE_ROS:
+        ap.error('ROS Python packages unavailable; source your ROS environment')
+    if not math.isfinite(a.rate) or a.rate <= 0:
+        ap.error('--rate must be positive and finite')
     rclpy.init()
     node = MetricsRecorder(cfg, path, a.rate, a.skip)
     try:

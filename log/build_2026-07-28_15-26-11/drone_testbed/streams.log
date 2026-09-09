@@ -1,0 +1,35 @@
+[0.568s] Invoking command in '/home/tam/Desktop/multi-drone-testbed/build/drone_testbed': PYTHONPATH=/home/tam/Desktop/multi-drone-testbed/build/drone_testbed/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build --no-deps symlink_data
+[0.728s] running develop
+[0.812s] running egg_info
+[0.812s] creating drone_testbed.egg-info
+[0.812s] writing drone_testbed.egg-info/PKG-INFO
+[0.813s] writing dependency_links to drone_testbed.egg-info/dependency_links.txt
+[0.813s] writing entry points to drone_testbed.egg-info/entry_points.txt
+[0.813s] writing requirements to drone_testbed.egg-info/requires.txt
+[0.813s] writing top-level names to drone_testbed.egg-info/top_level.txt
+[0.813s] writing manifest file 'drone_testbed.egg-info/SOURCES.txt'
+[0.814s] reading manifest file 'drone_testbed.egg-info/SOURCES.txt'
+[0.815s] writing manifest file 'drone_testbed.egg-info/SOURCES.txt'
+[0.816s] running build_ext
+[0.816s] Creating /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone-testbed.egg-link (link to .)
+[0.817s] Installing algorithm_manager script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+[0.817s] Installing crazyflie_node script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+[0.817s] Installing drone_node script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+[0.817s] Installing mocap_state_node script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+[0.817s] Installing sim_visualizer script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+[0.817s] 
+[0.817s] Installed /home/tam/Desktop/multi-drone-testbed/build/drone_testbed
+[0.817s] running symlink_data
+[0.817s] creating /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/ament_index
+[0.817s] creating /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/ament_index/resource_index
+[0.818s] creating /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/ament_index/resource_index/packages
+[0.818s] symbolically linking /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/resource/drone_testbed -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/ament_index/resource_index/packages
+[0.818s] symbolically linking /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/package.xml -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed
+[0.818s] creating /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/launch
+[0.818s] symbolically linking /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/launch/sim.launch.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/launch
+[0.818s] symbolically linking /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/launch/vicon_test.launch.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/launch
+[0.818s] symbolically linking /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/launch/hardware_single.launch.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/launch
+[0.818s] creating /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/config
+[0.818s] symbolically linking /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/config/testbed_vicon_test.yaml -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/config
+[0.818s] symbolically linking /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/config/testbed.yaml -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/config
+[0.840s] Invoked command in '/home/tam/Desktop/multi-drone-testbed/build/drone_testbed' returned '0': PYTHONPATH=/home/tam/Desktop/multi-drone-testbed/build/drone_testbed/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build --no-deps symlink_data

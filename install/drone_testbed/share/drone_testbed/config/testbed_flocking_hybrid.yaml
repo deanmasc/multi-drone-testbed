@@ -1,0 +1,97 @@
+# Flocking, hybrid: one or two real drones flying alongside the rest simulated.
+#
+# Same trick as testbed_hybrid.yaml -- nothing in the stack knows which drones
+# are real. Every drone publishes /<id>/state; for a real one that comes from
+# mocap_state_node reading VICON, for a virtual one from drone_node integrating
+# the dynamics. algorithm_manager subscribes to all four and cannot tell them
+# apart, so the real drones genuinely react to the virtual ones and back.
+#
+# Differs from testbed_flocking.yaml (the desk sim) only in being sized for the
+# lab: bounds match the geofence, and the leader circle is pulled in to 0.6 m so
+# the flock stays well inside it.
+
+simulation:
+  dt: 0.1
+  control_rate: 10.0     # verified identical behaviour at 5, 10 and 20 Hz
+  sim_rate: 10.0
+  # Same box the real drones are geofenced to, so a virtual agent cannot lead a
+  # real one somewhere it would be aborted for following.
+  bounds: 1.5
+
+# PLACE THE REAL DRONE(S) ON THESE MARKS before launching. For a virtual drone
+# the position below is what it starts from; for a real one mocap decides where
+# it actually is, but the algorithm was sized assuming it starts here.
+#
+# The layout is a square of side ~1.3 m, DELIBERATELY NUDGED off perfect
+# symmetry. This matters. A perfectly symmetric square start stays symmetric --
+# the drones settle into a square (both diagonals 0.828 m) instead of the usual
+# diamond, because nothing in the law breaks the tie. That equilibrium is a
+# knife edge: real mocap noise and prop wash will break it mid-flight and the
+# shape will collapse to the diamond at an unpredictable moment. Starting
+# asymmetric makes the outcome deterministic and repeatable.
+#
+# drone1 and drone2 are placed on OPPOSITE corners on purpose. They settle as
+# the long diagonal of the diamond, the furthest-separated pair, so those are
+# the two to make real -- and they are already the two airframes configured in
+# config/crazyflies.yaml, so hw_drone, cf_name and mocap_name all line up
+# without a confusing cross-mapping.
+drones:
+  - id: "drone1"          # REAL when flying two. Top-right corner.
+    initial_position: [0.68, 0.65]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone2"          # REAL when flying two. Bottom-left corner.
+    initial_position: [-0.60, -0.65]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone3"          # virtual. Top-left corner.
+    initial_position: [-0.65, 0.62]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone4"          # virtual. Bottom-right corner.
+    initial_position: [0.63, -0.66]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+
+# Predicted steady state from the starts above, measured over 120 s:
+#
+#   drone1-drone2  0.939   <- long diagonal: THE TWO REAL DRONES
+#   drone3-drone4  0.700   <- short diagonal, both virtual
+#   drone1-drone3  0.586      drone1-drone4  0.586
+#   drone2-drone3  0.586      drone2-drone4  0.586
+#
+#   closest approach between ANY two   0.582 m
+#   furthest any drone gets from the origin  1.124 m
+#       -> 0.38 m of margin to the 1.5 m geofence, 0.68 m to the 1.8 m abort
+#   peak speed  0.43 m/s during the 3 s pull-in, 0.16 m/s once settled
+#
+# SEPARATION OF THE TWO REAL DRONES. Which pair lands on which diagonal depends
+# on where they actually start, so it is worth knowing how much placement error
+# this tolerates. Over 20 trials with every drone displaced by up to +/-8 cm,
+# drone1-drone2 stayed the long 0.939 m diagonal in 13 and fell back to the
+# short 0.700 m one in the other 7. It never became a 0.586 m side. So the
+# guaranteed floor between the two aircraft is 0.70 m; the usual case is 0.94 m.
+#
+# Across 45 random layouts the closest ANY two drones came was 0.475 m, and two
+# drones deliberately started 0.15 m apart were pushed steadily apart and never
+# got closer. The repulsion term works. It is still only a 2D law with no
+# knowledge of rotor extent, so keep the launch file's altitude stagger.
+algorithm:
+  name: "Flocking"
+  params:
+    spacing: 0.70          # settles at 0.84x -> 0.586 m actual
+    sense_range: 0.84
+    epsilon: 0.1
+    bump_h: 0.2
+    action_a: 5.0
+    action_b: 5.0
+    gain_c1_alpha: 1.0
+    gain_c2_alpha: 2.0
+    gain_c1_gamma: 0.5
+    gain_c2_gamma: 1.4
+    gamma_mode: "circle"
+    gamma_center: [0.0, 0.0]
+    gamma_radius: 0.6      # 0.8 in the desk sim; pulled in for the geofence
+    gamma_speed: 0.15      # 25 s per lap
+    gamma_heading: 0.0
+    max_accel: 0.5

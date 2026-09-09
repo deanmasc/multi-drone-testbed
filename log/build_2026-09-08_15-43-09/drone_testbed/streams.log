@@ -1,0 +1,43 @@
+[0.574s] Invoking command in '/home/tam/Desktop/multi-drone-testbed/ros2_ws/src/drone_testbed': PYTHONPATH=/home/tam/Desktop/multi-drone-testbed/build/drone_testbed/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/drone_testbed build --build-base /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build install --record /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/install.log --install-scripts $base/lib/drone_testbed --single-version-externally-managed install_data
+[0.776s] running egg_info
+[0.777s] writing ../../../build/drone_testbed/drone_testbed.egg-info/PKG-INFO
+[0.777s] writing dependency_links to ../../../build/drone_testbed/drone_testbed.egg-info/dependency_links.txt
+[0.777s] writing entry points to ../../../build/drone_testbed/drone_testbed.egg-info/entry_points.txt
+[0.778s] writing requirements to ../../../build/drone_testbed/drone_testbed.egg-info/requires.txt
+[0.778s] writing top-level names to ../../../build/drone_testbed/drone_testbed.egg-info/top_level.txt
+[0.781s] reading manifest file '../../../build/drone_testbed/drone_testbed.egg-info/SOURCES.txt'
+[0.787s] writing manifest file '../../../build/drone_testbed/drone_testbed.egg-info/SOURCES.txt'
+[0.787s] running build
+[0.787s] running build_py
+[0.787s] copying drone_testbed/kuramoto_node.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed
+[0.788s] copying drone_testbed/algorithms/__init__.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms
+[0.788s] copying drone_testbed/algorithms/kuramoto.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms
+[0.788s] copying drone_testbed/utils/controller_launch.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/utils
+[0.789s] running install
+[0.790s] running install_lib
+[0.790s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms/__init__.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms
+[0.791s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms/kuramoto.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms
+[0.791s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/kuramoto_node.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed
+[0.791s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/utils/controller_launch.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/utils
+[0.792s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms/__init__.py to __init__.cpython-310.pyc
+[0.792s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms/kuramoto.py to kuramoto.cpython-310.pyc
+[0.794s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/kuramoto_node.py to kuramoto_node.cpython-310.pyc
+[0.795s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/utils/controller_launch.py to controller_launch.cpython-310.pyc
+[0.796s] running install_data
+[0.796s] copying launch/sim.launch.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/launch
+[0.796s] copying launch/hardware_hybrid.launch.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/launch
+[0.796s] copying config/testbed_kuramoto.yaml -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/config
+[0.796s] running install_egg_info
+[0.798s] removing '/home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed-0.1.0-py3.10.egg-info' (and everything under it)
+[0.798s] Copying ../../../build/drone_testbed/drone_testbed.egg-info to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed-0.1.0-py3.10.egg-info
+[0.799s] running install_scripts
+[0.820s] Installing algorithm_manager script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+[0.820s] Installing crazyflie_node script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+[0.820s] Installing drone_node script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+[0.821s] Installing formation_lifecycle script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+[0.821s] Installing kuramoto_controller script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+[0.821s] Installing live_visualizer script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+[0.821s] Installing mocap_state_node script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+[0.821s] Installing sim_visualizer script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+[0.822s] writing list of installed files to '/home/tam/Desktop/multi-drone-testbed/build/drone_testbed/install.log'
+[0.845s] Invoked command in '/home/tam/Desktop/multi-drone-testbed/ros2_ws/src/drone_testbed' returned '0': PYTHONPATH=/home/tam/Desktop/multi-drone-testbed/build/drone_testbed/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/drone_testbed build --build-base /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build install --record /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/install.log --install-scripts $base/lib/drone_testbed --single-version-externally-managed install_data

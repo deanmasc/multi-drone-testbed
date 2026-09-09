@@ -422,3 +422,128 @@ multi-drone-testbed/
 | Crazyswarm2 | Crazyflie ROS2 interface | `setup.sh` |
 | cflib | Direct Crazyflie comms | `pip3 install cflib` |
 | VICON Tracker | Motion capture (lab only) | Lab installation |
+
+## Kuramoto rotating ring (distributed ROS controllers)
+
+`KuramotoFormation` combines neighbor-coupled Kuramoto oscillators with a damped
+relative-position rotating-ring law. Both `sim.launch.py` and
+`hardware_hybrid.launch.py` select **one `kuramoto_controller` process per drone**
+when this algorithm is configured. There is no algorithm manager in this mode.
+A `formation_lifecycle` node only broadcasts start/reset and algorithm status;
+it never receives drone state or computes flight commands.
+
+Build and run from the repository root (with your ROS environment sourced):
+
+```bash
+colcon build --base-paths ros2_ws/src --packages-select drone_testbed
+source install/setup.bash
+ros2 launch drone_testbed sim.launch.py config:=config/testbed_kuramoto.yaml
+```
+
+The same config works with the existing hybrid launch and its hardware arguments:
+
+```bash
+ros2 launch drone_testbed hardware_hybrid.launch.py config:=config/testbed_kuramoto.yaml hw_drone:=drone1 cf_name:=drone_1 mocap_name:=drone_1
+```
+
+For a desktop numerical preview without ROS:
+
+```bash
+python3 run_sim.py --config testbed_kuramoto.yaml
+```
+
+The desktop adapter steps independent local agents synchronously in one process;
+the ROS launches run the controllers as separate processes. Each ROS controller
+subscribes only to its own `/<id>/state`, its configured neighbors' state and
+`/<neighbor>/phase`, plus lifecycle commands. It publishes only its own phase and
+`/<id>/cmd_accel`. The default graph is an undirected ring; the example specifies
+it explicitly. Static configuration supplies the common center and polygon slot
+assigned by drone order; there is no live centroid, leader, or global state input.
+
+Phase `theta_i` is now the absolute orbital angle. Drone order assigns an offset
+`delta_i = 2*pi*i/N`; coupling synchronizes `theta_i - delta_i`, giving four drones
+90-degree spacing rather than sending them all to one point. Define
+`e(theta) = [cos(theta), sin(theta)]` and its tangent
+`t(theta) = [-sin(theta), cos(theta)]`. The local law is:
+
+```text
+theta_dot_i = omega + phase_gain * sum_j sin((theta_j-delta_j) - (theta_i-delta_i))
+    + tracking_phase_gain * min(norm(p_i-center)/radius, 1) * sin(actual_angle_i-theta_i)
+p_des_i = center + radius*e(theta_i)
+v_des_i = radius*theta_dot_i*t(theta_i)
+u_i = -radius*theta_dot_i^2*e(theta_i)
+    + position_gain*(p_des_i - p_i)
+    + formation_gain*sum_j ((p_j - p_i) - (p_des_j - p_des_i))
+    + velocity_gain*(v_des_i - v_i)
+```
+
+All sums are over configured neighbors; the relative-position term requires both
+fresh neighbor position and phase. Centripetal acceleration is fed forward;
+tangential acceleration during synchronization is handled by feedback. Commands
+are limited by Euclidean norm to `max_accel`. `radius` is the constant ring radius
+and `omega` is its synchronized angular speed. The old breathing `amplitude`
+parameter is no longer used.
+
+Each step also checks the drone's actual angle about `center`. This slows its
+phase when it falls behind and advances it when it gets ahead, allowing neighbor
+coupling to respond to physical tracking errors. The check fades to zero at the
+center, where angle is undefined. Set `tracking_phase_gain: 0` to disable it.
+
+`initial_phases` now specifies absolute orbital angles in radians. The example
+uses reproducible uneven angles and matching initial positions to show the ring
+organizing while rotating counterclockwise, with a lap taking about 18 seconds.
+For other starts, set each position to `center + radius*e(initial_phase)` and
+preserve drone order around the ring. Arbitrary graphs/initial phases need not
+synchronize or maintain separation.
+
+Neighbor data older than `neighbor_timeout` (local receipt time) is omitted;
+missing neighbors do not block the other controllers. Stale own state or an
+excessive timer gap produces zero acceleration and freezes the oscillator for
+that tick. Zero acceleration is not a landing or braking command. Hardware
+watchdogs/geofencing remain responsible for hardware failsafes. Reset is available
+through `/reset_simulation`; live `/set_algorithm` switching is not supported in
+this distributed mode—relaunch with the desired configuration.
+
+The example is sized for the 1.5 m arena. Numerical tests cover 120 seconds of
+synchronization/rotation, radius and angular spacing errors, bounds, acceleration limits, neighbor isolation,
+missing neighbors, and invalid parameters. This controller has no collision
+avoidance term and has not been flight validated; use the simulation to assess
+initial placement and retain the hybrid launch's altitude staggering.
+
+```bash
+PYTHONPATH=ros2_ws/src/drone_testbed python3 -m unittest discover -s ros2_ws/src/drone_testbed/test -v
+```
+
+To record Kuramoto metrics, start this before launching the simulation or hybrid
+flight (use the same config for both):
+
+```bash
+source /opt/ros/humble/setup.bash
+python3 tools/metrics_recorder.py \
+    --config ros2_ws/src/drone_testbed/config/testbed_kuramoto.yaml \
+    --out-dir ~/flights
+```
+
+The recorder automatically selects Kuramoto metrics: all drone phases and receipt
+ages, raw wrapped pairwise `phase_diff_*`, offset-corrected
+`phase_offset_error_*`, and fleet order parameter `order_R` computed from
+`theta_i - delta_i`. A correctly spaced ring has `order_R` approaching 1 and
+`phase_max_error` approaching 0; raw phase differences retain the polygon offsets.
+Physical metrics include `angular_spacing_rms` and `angular_spacing_max_error`
+(wrapped error of consecutive angular gaps from `2*pi/N`, in radians),
+`radius_rms` (error from the configured radius), individual measured/desired radii,
+orbital target position errors, `tracking_rms`, radius spread, and minimum pair
+separation `d_min`. Angular spacing is undefined if a drone is at the center. It records all four
+agents, including the simulated neighbors in a two-real-drone run. Ctrl-C appends
+the summary, including the first interval with `R > 0.99` for five seconds during
+active operation. Times refer to the record clock. Stops, invalid samples, and
+sampling gaps break that interval; this is a first sustained synchronization
+observation, not a guarantee that synchronization persists thereafter.
+
+Samples use latest received values, with a 0.5 s maximum age and 0.1 s maximum
+receipt-time skew for derived metrics; invalid metrics are `nan`. The phase
+messages have no source timestamps, so these are approximate simultaneous
+measurements, without network-delay compensation. Raw held values and their ages
+remain available for diagnosis. Start the recorder before flight to capture the
+synchronization transient. Physical tracking metrics are separate from phase
+agreement; phase synchronization alone does not demonstrate physical tracking.

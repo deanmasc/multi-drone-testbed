@@ -1,0 +1,127 @@
+[0.420s] Invoking command in '/home/tam/Desktop/multi-drone-testbed/build/drone_testbed': PYTHONPATH=/home/tam/Desktop/multi-drone-testbed/build/drone_testbed/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --uninstall --editable --build-directory /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build
+[0.606s] running develop
+[0.700s] Removing /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone-testbed.egg-link (link to .)
+[0.720s] Invoked command in '/home/tam/Desktop/multi-drone-testbed/build/drone_testbed' returned '0': PYTHONPATH=/home/tam/Desktop/multi-drone-testbed/build/drone_testbed/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --uninstall --editable --build-directory /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build
+[0.721s] Invoking command in '/home/tam/Desktop/multi-drone-testbed/ros2_ws/src/drone_testbed': PYTHONPATH=/home/tam/Desktop/multi-drone-testbed/build/drone_testbed/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/drone_testbed build --build-base /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build install --record /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/install.log --install-scripts $base/lib/drone_testbed --single-version-externally-managed install_data --force
+[0.878s] running egg_info
+[0.879s] writing ../../../build/drone_testbed/drone_testbed.egg-info/PKG-INFO
+[0.879s] writing dependency_links to ../../../build/drone_testbed/drone_testbed.egg-info/dependency_links.txt
+[0.879s] writing entry points to ../../../build/drone_testbed/drone_testbed.egg-info/entry_points.txt
+[0.879s] writing requirements to ../../../build/drone_testbed/drone_testbed.egg-info/requires.txt
+[0.879s] writing top-level names to ../../../build/drone_testbed/drone_testbed.egg-info/top_level.txt
+[0.881s] reading manifest file '../../../build/drone_testbed/drone_testbed.egg-info/SOURCES.txt'
+[0.888s] writing manifest file '../../../build/drone_testbed/drone_testbed.egg-info/SOURCES.txt'
+[0.888s] running build
+[0.889s] running build_py
+[0.889s] creating /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build
+[0.889s] creating /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib
+[0.889s] creating /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed
+[0.889s] copying drone_testbed/__init__.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed
+[0.889s] copying drone_testbed/mocap_state_node.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed
+[0.889s] copying drone_testbed/crazyflie_node.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed
+[0.889s] copying drone_testbed/sim_visualizer.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed
+[0.889s] copying drone_testbed/live_visualizer.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed
+[0.889s] copying drone_testbed/drone_node.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed
+[0.889s] copying drone_testbed/algorithm_manager.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed
+[0.889s] creating /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms
+[0.889s] copying drone_testbed/algorithms/__init__.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms
+[0.890s] copying drone_testbed/algorithms/trochoidal.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms
+[0.890s] copying drone_testbed/algorithms/registry.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms
+[0.890s] copying drone_testbed/algorithms/square.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms
+[0.890s] copying drone_testbed/algorithms/trochoidal_consensus.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms
+[0.891s] copying drone_testbed/algorithms/flocking.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms
+[0.891s] copying drone_testbed/algorithms/coverage.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms
+[0.891s] copying drone_testbed/algorithms/print_state.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms
+[0.891s] copying drone_testbed/algorithms/consensus.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms
+[0.891s] copying drone_testbed/algorithms/leader_follower.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms
+[0.891s] copying drone_testbed/algorithms/base_algorithm.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms
+[0.891s] creating /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/utils
+[0.891s] copying drone_testbed/utils/__init__.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/utils
+[0.892s] copying drone_testbed/utils/types.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/utils
+[0.892s] copying drone_testbed/utils/geofence.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/utils
+[0.893s] copying drone_testbed/utils/config_loader.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/utils
+[0.893s] creating /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/dynamics
+[0.893s] copying drone_testbed/dynamics/__init__.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/dynamics
+[0.893s] copying drone_testbed/dynamics/double_integrator.py -> /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/dynamics
+[0.894s] running install
+[0.894s] running install_lib
+[0.895s] creating /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed
+[0.895s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/__init__.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed
+[0.895s] creating /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms
+[0.895s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms/__init__.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms
+[0.895s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms/trochoidal.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms
+[0.896s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms/registry.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms
+[0.896s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms/square.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms
+[0.896s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms/trochoidal_consensus.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms
+[0.896s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms/flocking.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms
+[0.896s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms/coverage.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms
+[0.896s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms/print_state.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms
+[0.896s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms/consensus.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms
+[0.896s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms/leader_follower.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms
+[0.896s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithms/base_algorithm.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms
+[0.896s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/mocap_state_node.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed
+[0.896s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/crazyflie_node.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed
+[0.896s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/sim_visualizer.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed
+[0.896s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/live_visualizer.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed
+[0.896s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/drone_node.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed
+[0.897s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/algorithm_manager.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed
+[0.897s] creating /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/utils
+[0.897s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/utils/__init__.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/utils
+[0.897s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/utils/types.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/utils
+[0.897s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/utils/geofence.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/utils
+[0.897s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/utils/config_loader.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/utils
+[0.897s] creating /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/dynamics
+[0.897s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/dynamics/__init__.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/dynamics
+[0.897s] copying /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build/lib/drone_testbed/dynamics/double_integrator.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/dynamics
+[0.898s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/__init__.py to __init__.cpython-310.pyc
+[0.898s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms/__init__.py to __init__.cpython-310.pyc
+[0.898s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms/trochoidal.py to trochoidal.cpython-310.pyc
+[0.899s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms/registry.py to registry.cpython-310.pyc
+[0.900s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms/square.py to square.cpython-310.pyc
+[0.901s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms/trochoidal_consensus.py to trochoidal_consensus.cpython-310.pyc
+[0.901s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms/flocking.py to flocking.cpython-310.pyc
+[0.902s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms/coverage.py to coverage.cpython-310.pyc
+[0.904s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms/print_state.py to print_state.cpython-310.pyc
+[0.904s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms/consensus.py to consensus.cpython-310.pyc
+[0.905s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms/leader_follower.py to leader_follower.cpython-310.pyc
+[0.905s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithms/base_algorithm.py to base_algorithm.cpython-310.pyc
+[0.905s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/mocap_state_node.py to mocap_state_node.cpython-310.pyc
+[0.906s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/crazyflie_node.py to crazyflie_node.cpython-310.pyc
+[0.908s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/sim_visualizer.py to sim_visualizer.cpython-310.pyc
+[0.909s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/live_visualizer.py to live_visualizer.cpython-310.pyc
+[0.911s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/drone_node.py to drone_node.cpython-310.pyc
+[0.912s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/algorithm_manager.py to algorithm_manager.cpython-310.pyc
+[0.912s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/utils/__init__.py to __init__.cpython-310.pyc
+[0.912s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/utils/types.py to types.cpython-310.pyc
+[0.913s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/utils/geofence.py to geofence.cpython-310.pyc
+[0.913s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/utils/config_loader.py to config_loader.cpython-310.pyc
+[0.913s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/dynamics/__init__.py to __init__.cpython-310.pyc
+[0.914s] byte-compiling /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed/dynamics/double_integrator.py to double_integrator.cpython-310.pyc
+[0.914s] running install_data
+[0.914s] copying resource/drone_testbed -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/ament_index/resource_index/packages
+[0.914s] copying package.xml -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed
+[0.914s] copying launch/sim.launch.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/launch
+[0.915s] copying launch/hardware_hybrid.launch.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/launch
+[0.915s] copying launch/vicon_test.launch.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/launch
+[0.915s] copying launch/hardware_single.launch.py -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/launch
+[0.915s] copying config/testbed_flocking.yaml -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/config
+[0.915s] copying config/testbed_fig4.yaml -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/config
+[0.915s] copying config/testbed_hybrid.yaml -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/config
+[0.915s] copying config/testbed_flocking_hybrid.yaml -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/config
+[0.916s] copying config/testbed_coverage.yaml -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/config
+[0.916s] copying config/testbed_vicon_test.yaml -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/config
+[0.916s] copying config/testbed_trochoidal.yaml -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/config
+[0.916s] copying config/testbed_square.yaml -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/config
+[0.916s] copying config/testbed.yaml -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/config
+[0.916s] copying config/testbed_coverage_hybrid.yaml -> /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/share/drone_testbed/config
+[0.916s] running install_egg_info
+[0.918s] Copying ../../../build/drone_testbed/drone_testbed.egg-info to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages/drone_testbed-0.1.0-py3.10.egg-info
+[0.918s] running install_scripts
+[0.935s] Installing algorithm_manager script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+[0.935s] Installing crazyflie_node script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+[0.936s] Installing drone_node script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+[0.936s] Installing live_visualizer script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+[0.936s] Installing mocap_state_node script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+[0.936s] Installing sim_visualizer script to /home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/drone_testbed
+[0.936s] writing list of installed files to '/home/tam/Desktop/multi-drone-testbed/build/drone_testbed/install.log'
+[0.955s] Invoked command in '/home/tam/Desktop/multi-drone-testbed/ros2_ws/src/drone_testbed' returned '0': PYTHONPATH=/home/tam/Desktop/multi-drone-testbed/build/drone_testbed/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/tam/Desktop/multi-drone-testbed/install/drone_testbed/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/drone_testbed build --build-base /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/build install --record /home/tam/Desktop/multi-drone-testbed/build/drone_testbed/install.log --install-scripts $base/lib/drone_testbed --single-version-externally-managed install_data --force

@@ -1,0 +1,41 @@
+# Simulation or hybrid launch: one independent controller per drone.
+simulation:
+  dt: 0.05
+  control_rate: 20.0
+  sim_rate: 20.0
+  bounds: 1.5
+drones:
+  - id: drone1
+    initial_position: [0.65, 0.0]
+    initial_velocity: [0.0, 0.0]
+  - id: drone2
+    initial_position: [-0.25312, 0.59869]
+    initial_velocity: [0.0, 0.0]
+  - id: drone3
+    initial_position: [-0.62979, 0.16081]
+    initial_velocity: [0.0, 0.0]
+  - id: drone4
+    initial_position: [0.12914, -0.63704]
+    initial_velocity: [0.0, 0.0]
+algorithm:
+  name: KuramotoFormation
+  params:
+    center: [0.0, 0.0]
+    radius: 0.65
+    omega: 0.35                 # rad/s counterclockwise; period about 18 seconds
+    phase_gain: 0.25
+    tracking_phase_gain: 0.4    # check actual orbital angle; slow phase when motion lags
+    position_gain: 1.0
+    formation_gain: 0.8
+    velocity_gain: 2.0
+    max_accel: 0.5              # Euclidean norm, m/s^2
+    neighbor_timeout: 0.5      # local receipt age, seconds
+    # Absolute orbital angles, in radians; positions above match these angles.
+    # Reproducible uneven gaps show convergence without a random close start.
+    # Drone order assigns desired offsets 0, pi/2, pi, 3*pi/2.
+    initial_phases: {drone1: 0.0, drone2: 1.9707963268, drone3: 2.8915926536, drone4: 4.9123889804}
+    adjacency:
+      drone1: [drone2, drone4]
+      drone2: [drone1, drone3]
+      drone3: [drone2, drone4]
+      drone4: [drone1, drone3]
