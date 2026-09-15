@@ -39,8 +39,23 @@ Usage, one real drone:
 Usage, two real drones:
   ros2 launch drone_testbed hardware_hybrid.launch.py \
       config:=config/testbed_fig4.yaml \
-      hw_drone:=drone1,drone4 cf_name:=drone_1,drone_4 \
-      mocap_name:=drone_1,drone_4
+      hw_drone:=drone1,drone4 cf_name:=drone_1,drone_2 \
+      mocap_name:=drone_1,drone_2
+
+ACCELERATION CLAMP. max_acceleration (default "config") sets the clamp in
+crazyflie_node AND drone_node to the algorithm's own max_accel. Before
+2026-09-15 neither node was given it, so both sat at their 0.5 m/s^2 default
+whatever the config said: testbed_fig4.yaml's 1.8 and 3.5 never reached a
+drone, and the real drones' commands were clipped on 85-96% of ticks in every
+trochoidal flight (docs/PROJECT_AIM.md section 11h). Pass a number to override.
+
+EXPERIMENT KNOBS (docs/PROJECT_AIM.md section 12), real drones only:
+  velocity_window   samples in mocap_state_node's velocity fit (default 10)
+  velocity_max_age  oldest sample that fit may use, seconds (default 0.25)
+  mocap_noise       artificial Gaussian noise on VICON position, metres per
+                    axis (default 0 = off)
+None of these is in the config, so the recorder cannot see them. Give it the
+same values with metrics_recorder.py --note, so the record says what flew.
 """
 
 import os
@@ -77,6 +92,18 @@ def _heights(value, step, count):
         f'takeoff_height must be a single value or exactly {count} '
         f'comma-separated values, one per real drone; got {given}'
     )
+
+
+def _accel_clamp(value, config):
+    """The acceleration clamp for crazyflie_node and drone_node.
+
+    "config" means the algorithm's own max_accel, so the number in the yaml is
+    the number that flies. Anything else is taken as metres per second squared.
+    """
+    if value.strip().lower() != 'config':
+        return float(value)
+    params = (config.get('algorithm', {}) or {}).get('params', {}) or {}
+    return float(params.get('max_accel', 0.5))
 
 
 def _launch_setup(context):
@@ -122,6 +149,24 @@ def _launch_setup(context):
                        len(hw_drones))
 
     geofence = float(cfg('geofence'))
+    max_acc = _accel_clamp(cfg('max_acceleration'), config)
+    window = int(cfg('velocity_window'))
+    max_age = float(cfg('velocity_max_age'))
+    noise = float(cfg('mocap_noise'))
+
+    print(f'[hardware_hybrid] acceleration clamp {max_acc} m/s^2 on every drone, '
+          f'real and virtual (max_acceleration:={cfg("max_acceleration")})')
+    print(f'[hardware_hybrid] velocity fit: {window} samples, max age {max_age} s')
+    # VICON streams at roughly 100Hz. A window spanning more than max_age can
+    # never fill: the oldest samples are dropped and the fit silently uses
+    # fewer than asked for, so the experiment would not be the one intended.
+    if window * 0.01 > max_age:
+        print(f'[hardware_hybrid] WARNING: velocity_window {window} spans '
+              f'~{window * 0.01:.2f} s at 100 Hz, longer than velocity_max_age '
+              f'{max_age} s. Raise velocity_max_age or the fit uses fewer samples.')
+    if noise > 0.0:
+        print(f'[hardware_hybrid] ARTIFICIAL NOISE: {noise * 1000:.1f} mm per axis '
+              f'on the VICON position of {hw_drones}')
     nodes = []
 
     # --- the real drones -------------------------------------------------
@@ -133,7 +178,13 @@ def _launch_setup(context):
         nodes.append(Node(
             package='drone_testbed', executable='mocap_state_node',
             name=f'mocap_state_node_{hw_drone}',
-            parameters=[{'drone_id': hw_drone, 'mocap_name': mocap_name}],
+            parameters=[{
+                'drone_id': hw_drone,
+                'mocap_name': mocap_name,
+                'velocity_window': window,
+                'velocity_max_age': max_age,
+                'position_noise_std': noise,
+            }],
             output='screen',
         ))
         nodes.append(Node(
@@ -146,6 +197,7 @@ def _launch_setup(context):
                 'use_mocap_yaw': cfg('use_mocap_yaw').lower() in ('true', '1'),
                 'geofence': geofence,
                 'max_lead': float(cfg('max_lead')),
+                'max_acceleration': max_acc,
                 'takeoff_height': height,
             }],
             output='screen',
@@ -168,6 +220,9 @@ def _launch_setup(context):
                 # geofenced to, so a virtual agent cannot lead the real one
                 # somewhere it would be aborted for following.
                 'bounds': sim_cfg.get('bounds', geofence),
+                # Same clamp as the real drones, or the virtual agents would
+                # fly a different law from the physical ones.
+                'max_acceleration': max_acc,
             }],
             output='screen',
         ))
@@ -205,6 +260,11 @@ def generate_launch_description():
         DeclareLaunchArgument('use_mocap_yaw', default_value='true'),
         DeclareLaunchArgument('geofence', default_value='1.5'),
         DeclareLaunchArgument('max_lead', default_value='0.3'),
+        # "config" = the algorithm's max_accel; see ACCELERATION CLAMP above.
+        DeclareLaunchArgument('max_acceleration', default_value='config'),
+        DeclareLaunchArgument('velocity_window', default_value='10'),
+        DeclareLaunchArgument('velocity_max_age', default_value='0.25'),
+        DeclareLaunchArgument('mocap_noise', default_value='0.0'),
         # Must exceed takeoff, or the simulated drones fly the formation
         # without the real ones. Each real drone is its own process building
         # its own Crazyswarm client and taking off on its own clock, so the

@@ -528,3 +528,252 @@ rather than a rehearsal.
   with a stated assumption, in the algorithm's config comments.
 - Keep the `grid_res` lesson in mind generally: **check whether a discrepancy is
   ours before attributing it to hardware.** Several will be.
+
+## 11. Hardware findings, 8–9 September 2026
+
+*Analysed 2026-09-15 from the 14 records in the team Drive (folders 8/9/2026 and
+9/9/2026); copies in `logs/hw/`. Every number below was computed from the raw
+rows over live, pre-geofence windows — **not** from the summary block the recorder
+appends, which is wrong for several of these files (see 11g).*
+
+### 11a. What flew, and what is usable
+
+| Day | Flight | Usable? |
+|---|---|---|
+| 8 Sep | Flocking hybrid ×5 (agents drone1, drone2 real) | test4 (27 s clean) and test2 (16 s). test1: drone1 never took off. test3: 6 s. test5: no data, because the state feed died at ~6 s. |
+| 8 Sep | Trochoidal, 2 real (drone1, drone4), rescale 6 | yes, 71 s clean |
+| 8 Sep | Trochoidal, 3 real ×3 | no. All three failed during takeoff (11f). |
+| 9 Sep | Trochoidal, 2 real, test1 (rescale 10) | yes, 29 s clean |
+| 9 Sep | Trochoidal test2, test3 | no. Both failed in the hover *before* the algorithm started. |
+| 9 Sep | Trochoidal test4, labelled rescale 14 | yes, but it actually ran rescale 10 (11b) |
+| 9 Sep | Kuramoto | no. The algorithm never started. |
+
+In the Drive notes, "drone3" etc. name physical airframes, whereas the logs name
+algorithm agents. On fig4 runs the real agents are drone1 = VICON `drone_1` and
+drone4 = VICON `drone_2`.
+
+### 11b. The "rescale 14" flight ran rescale-10 gains
+
+The flight logs the positions of the two virtual drones, and they are exact
+double integrators. Replaying them through the control law, driven by the
+logged real drones, shows which gains actually ran:
+
+| Flight | Header says | Replay error: r6 | r10 | r14 |
+|---|---|---|---|---|
+| 8 Sep test1 | r6 | **0.2 cm** | 15.8 cm | 23.9 cm |
+| 9 Sep test1 | r10 | 16.0 cm | **0.8 cm** | 13.4 cm |
+| 9 Sep test4 | r14 | 17.8 cm | **0.6 cm** | 13.5 cm |
+
+Why this happened:
+- The recorder prints the params from the yaml passed to *it* (the repo copy).
+- The flight loads the *installed* copy under `~/ros2_ws/install`.
+- The copy + `colcon build` was not redone after the rescale-14 edit.
+
+**Consequences:** rescale 14 has never flown, and rescale 10 has two repeats. The
+recorder header is not evidence of what flew.
+
+### 11c. Trochoidal: speed ladder
+
+Method: a two-mode (eigenvalue) fit over the window from algorithm start to the
+first geofence approach. Applied to simulation, the same fit recovers the
+designed periods and zero growth exactly.
+
+| Run | Fast period, hw vs sim | Slow period | Growth rate | Size doubles every | Start → geofence |
+|---|---|---|---|---|---|
+| r6, 2 Sep | 19.42 vs 19.04 s (+2%) | 59.5 s | +0.039 /s | 18 s (0.9 laps) | 53 s |
+| r6, 8 Sep | 19.38 vs 19.04 s (+2%) | 64.0 vs 63.5 s | +0.024 /s | 29 s (1.5 laps) | 73 s |
+| r10, 9 Sep t1 | 11.9 vs 11.42 s (+4%) | 38.0 vs 38.1 s | +0.064 /s | 11 s (0.9 laps) | 29 s |
+| r10, 9 Sep t4 | 11.8 vs 11.42 s (+4%) | ~35 s (short window) | +0.062 /s | 11 s (0.9 laps) | 29 s |
+
+- **The shape survives.** Periods are within 2–4% of the eigenvalue prediction,
+  and the period ratio is 3.30 against 3.34.
+- **The marginal-stability promise does not survive.** The pattern grows on
+  every flight, while simulation holds it for thousands of laps. This is the
+  predicted cause-3 result of section 4.
+- **Going faster widened the gap in real time.** A 1.67× speed-up made the growth
+  rate 1.6–2.7× faster, and the fleet reached the geofence in 29 s instead of
+  53–73 s.
+- **Per lap, the gap is unchanged so far:** about one lap to double in size at
+  both speeds. So up to rescale 10, the divergence scales with the pattern's own
+  clock. If per-lap growth gets worse at rescale 14 (peak tilt ~12°), that is
+  where the point-mass simplification starts to break. (Caution on
+  "~12°": that is the start-up transient. Once running, the designed pattern
+  asks for only ~0.3–0.7° of tilt; the grown hardware pattern asks for more.)
+- The recorder's own trochoidal summaries (period ratios of 5–47, "decay" time
+  constants) are geofence and sub-cycle artefacts. Do not quote them.
+
+### 11d. Flocking: the circling is flocking-specific
+
+The 8 Sep test4 flight (20–47 s) repeats 2 Sep:
+- **Held:** min gap 0.39 m, lattice error 0.120 m, spacing/d 0.94, connected 100%.
+- **Failed:** velocity spread 0.133 m/s, against 0.000 in simulation.
+
+Two separate motions show up on hardware. RMS ripple:
+
+| Motion | Flocking | Trochoidal | Coverage (settled, 2 Sep) |
+|---|---|---|---|
+| Slow circling, 2–6 s period (the visible "each drone goes in circles") | real 4.5–12.7 cm, **virtual 4.3–4.8 cm** (sim 1.7 cm) | virtual 0.5–0.8 cm at r6 | ~1 cm to centroid |
+| Fast shake, ~1.2 s period | real 3.3–7.0 cm, virtual ~2 cm | real 3.4–3.8 cm, virtual 0.1–0.7 cm | < 1 cm |
+
+(At r10, trochoidal's 2–6 s band also picks up the much larger, faster pattern,
+so r6 is the clean comparison.)
+
+**The circling belongs to flocking.** The key observation is that it reaches the
+*virtual* drones, which have no physics of their own. So something in the control
+law carries it across the fleet.
+
+The candidate mechanism is a hypothesis, not a result:
+- Flocking couples agents through their **neighbours' measured velocity**
+  (`flocking.py:264`, `other.velocity - state.velocity`). Every real drone's
+  velocity is differentiated from VICON, so it is noisy and late, and it is
+  broadcast to every neighbour.
+- Trochoidal couples only through positions; each agent uses its own velocity only.
+
+This is the supervisor's velocity-differentiation hypothesis, now with a
+specific path. Section 12 tests it.
+
+### 11e. A separate fast shake on the real drones
+
+This is a side issue.
+- The ~1.2 s shake is 10–16× faster than trochoidal's own inner loop (12–19 s),
+  so it is not the designed motion.
+- It is the same at r6 and r10, even though β, the velocity gain, rises 67%.
+- It is absent in hover, in settled coverage, and in the one clean segment of
+  the 12 Aug square flight (explicit setpoints).
+- Cause unknown.
+
+### 11f. Three drones and other failures
+
+- **All three 3-drone attempts failed at takeoff, before the algorithm ran.**
+  - test1: `drone_3` shot ~2.7 m sideways in 1 s.
+  - test2: `drone_3` never lifted.
+  - test3: the heights of `drone_2` and `drone_3` swap sample-to-sample, so
+    VICON Tracker is confusing the two rigid bodies.
+
+  Suspected, unconfirmed: the two marker layouts are too alike.
+- **9 Sep test2 and test3 went wrong in the pre-start hover, not under the
+  algorithm.**
+  - test2: `drone_2` slid ~4.5 m while falling.
+  - test3: `drone_1` drifted steadily at ~0.2 m/s while holding a fixed point.
+
+  They say nothing about speed.
+- **Kuramoto:** the `active` flag stayed 0 and no phases were published. Its code
+  is not on GitHub, so the cause needs the terminal-2 log.
+
+### 11g. Recorder defects found
+
+1. The header shows the params from the recorder's `--config`, not what flew.
+   This is what hid 11b.
+2. Height columns are keyed by VICON body, so on fig4 runs `z_drone2` is agent
+   drone4.
+3. The "held"/"SINKING" altitude figures include time spent landed.
+4. Frozen tails (the recorder keeps writing after the feed stops): 43–55% of
+   flocking tests 1–3. Unfixed.
+
+### 11h. The acceleration clamp never reached the drones
+
+Found 2026-09-15, while preparing the next lab.
+
+- `hardware_hybrid.launch.py` did not pass `max_accel` to `crazyflie_node` or
+  `drone_node`, so both clipped every command at their own 0.5 m/s² default.
+  `testbed_fig4.yaml`'s 1.8 and 3.5 never reached a drone.
+- Evaluating the law on the logged states, the real drones' command exceeded
+  0.5 on an axis on **85–96% of ticks**, at rescale 6 and rescale 10 alike. That
+  is a lower bound, because the mocap velocity the drones really used is
+  noisier than the smoothed estimate used here.
+- So every trochoidal hardware flight so far flew the real drones saturated,
+  and the growth rates in 11c are for the clipped law.
+- Fixed: the launch now passes the config's `max_accel` to both nodes
+  (`max_acceleration:=config`, the default), and prints the clamp at startup.
+- Possibly relevant to 11e, unconfirmed: a saturated velocity loop can settle
+  into a limit cycle whose size is set by the clamp rather than the gain. That
+  would explain why the ~1.2 s shake did not change with β.
+
+## 12. Next lab plan
+
+Three things, in this order.
+
+### Before every flight
+
+On the lab PC. The code changed as well as the configs, so copy the whole
+package, not only a yaml:
+
+```bash
+REPO=~/Desktop/multi-drone-testbed
+cd $REPO && git pull
+rsync -a $REPO/ros2_ws/src/drone_testbed/ ~/ros2_ws/src/drone_testbed/
+cd ~/ros2_ws && colcon build --packages-select drone_testbed && source install/setup.bash
+grep -E "^\s+(alpha|beta|kappa|max_accel):" ~/ros2_ws/install/drone_testbed/share/drone_testbed/config/testbed_fig4.yaml
+```
+
+Then check three things:
+- The grep must show the rescale-14 gains: alpha 9.9259, beta 14.0, kappa
+  1.7815, max_accel 3.5.
+- Terminal 2 must print `acceleration clamp 3.5 m/s^2`.
+- The recorder now warns in capitals if the yaml it was given differs from the
+  installed one.
+
+### 1. Trochoidal: rescale 14, flown properly (×2)
+
+```bash
+# T2
+ros2 launch drone_testbed hardware_hybrid.launch.py config:=config/testbed_fig4.yaml \
+    hw_drone:=drone1,drone4 cf_name:=drone_1,drone_2 mocap_name:=drone_1,drone_2 flight_duration:=95.0
+# T3
+cd ~/Desktop/multi-drone-testbed && python3 tools/metrics_recorder.py \
+    --config ros2_ws/src/drone_testbed/config/testbed_fig4.yaml \
+    --hw drone1,drone4 --mocap-name drone_1,drone_2 --note "rescale 14"
+```
+
+This is also the first trochoidal flight with the clamp as designed (11h). If
+there is time, one rescale-10 flight (`config:=config/testbed_fig4_r10.yaml`,
+`flight_duration:=125.0`) gives the ladder a second clean rung.
+
+### 2. Trochoidal metrics: laps before doubling, and tilt
+
+```bash
+python3 tools/analyse_trochoidal.py --config ros2_ws/src/drone_testbed/config/testbed_fig4.yaml logs/hw/<record>.txt
+```
+
+The tool reports, over the clean window only:
+- **Laps before the pattern doubles in size:** the growth rate of each mode,
+  turned into doubling time in seconds and in fast laps.
+- **Start to geofence**, in seconds.
+- **Tilt:** each real drone's median, p95 and max. It now comes from the VICON
+  orientation in a new recorder column, and the tool puts it next to the
+  point-mass prediction atan(|a|/g) from simulation.
+- **The gains that actually flew**, from replaying the virtual drones, so 11b
+  cannot happen unnoticed again.
+
+Prediction:
+- About one lap to double, as at rescale 6 and 10, means the divergence still
+  scales with the pattern's own clock.
+- Fewer laps, with measured tilt running above the point-mass prediction,
+  means this is where the point-mass model breaks.
+
+### 3. Flocking: velocity window, and real pose timing
+
+Same config each time. Change only the VICON velocity fit, 1–2 flights each:
+
+```bash
+ros2 launch drone_testbed hardware_hybrid.launch.py config:=config/testbed_flocking_hybrid.yaml \
+    hw_drone:=drone1,drone2 cf_name:=drone_1,drone_2 mocap_name:=drone_1,drone_2 \
+    flight_duration:=90.0 velocity_window:=20        # then 10 (the default), then 5
+python3 tools/metrics_recorder.py --config ros2_ws/src/drone_testbed/config/testbed_flocking_hybrid.yaml \
+    --hw drone1,drone2 --mocap-name drone_1,drone_2 --note "velocity_window 20"
+```
+
+**Metrics:**
+- The recorder's WOBBLE block: circling amplitude and period per drone. The
+  **virtual** drones are the decisive ones.
+- The theorem's promises: velocity spread, lattice error, min gap.
+- **Pose timing:** a new TIMING block in every record. It gives the VICON rate
+  and jitter per drone, dropouts over 20 ms, the /state rate, and the lag each
+  velocity window costs at the measured rate. Raw receipt times go to
+  `<record>_timing.npz`.
+
+**Prediction.** If the lagged, noisy differentiated velocity drives the
+circling:
+- window 20 (smoother but later) and window 5 (fresher but noisier) should
+  both change it;
+- if the circling is the same at all three, differentiation is not the driver.

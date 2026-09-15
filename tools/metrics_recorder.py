@@ -138,18 +138,20 @@ class MetricSet:
     # appended last so no existing column changes index.
 
     def all_columns(self):
-        return self.columns() + [f'z_{i}' for i in self.ids]
+        return (self.columns() + [f'z_{i}' for i in self.ids]
+                + [f'tilt_{i}' for i in self.ids])
 
-    def full_row(self, t, pos, vel, z=None):
+    def full_row(self, t, pos, vel, z=None, tilt=None):
         r = self.row(t, pos, vel)
         if r is None:
             return None
         n = len(self.ids)
-        if z is None:
-            zs = [float('nan')] * n
-        else:
-            zs = [float('nan') if v is None else float(v) for v in z]
-        return list(r) + zs
+
+        def fill(values):
+            if values is None:
+                return [float('nan')] * n
+            return [float('nan') if v is None else float(v) for v in values]
+        return list(r) + fill(z) + fill(tilt)
 
     def altitude_lines(self, t, data):
         """Did every drone hold the height it took off at?"""
@@ -182,6 +184,35 @@ class MetricSet:
         out.append('    A negative sink rate means the drone lost altitude over')
         out.append('    the run -- the commanded z is constant, so that is the')
         out.append('    onboard controller failing to hold it, not the algorithm.')
+        return out
+
+    def tilt_lines(self, t, data):
+        """How far each real drone leaned, from the VICON orientation.
+
+        Every control law here assumes a point mass that accelerates in any
+        direction instantly. A quadrotor has to tilt by about atan(a/g) first,
+        so tilt is the direct measure of how hard that assumption is loaded.
+        """
+        n = len(self.ids)
+        base = len(self.columns()) + n
+        if data.shape[1] < base + n:
+            return []
+        tilt = data[:, base:base + n]
+        if not np.isfinite(tilt).any():
+            return []
+        out = ['', '  TILT (degrees from level, from the VICON orientation)',
+               '    drone          median     p95     max']
+        for k, i in enumerate(self.ids):
+            col = tilt[:, k]
+            col = col[np.isfinite(col)]
+            if len(col) < 4:
+                out.append(f'    {i:12s}      --  (no VICON body)')
+                continue
+            out.append(f'    {i:12s} {np.median(col):8.1f} '
+                       f'{np.percentile(col, 95):7.1f} {col.max():7.1f}')
+        out += ['', '    Point-mass reading: tilt ~ atan(|a|/g), so 1 m/s^2 of',
+                '    acceleration is about 5.8 deg. The hover value is the',
+                '    rigid body\'s own offset from level -- subtract it.']
         return out
 
 
@@ -968,7 +999,7 @@ def make_metrics(algo_name, ids, params):
 # file format
 # ---------------------------------------------------------------------------
 
-def write_header(fh, cfg, algo, ids, cols, rate):
+def write_header(fh, cfg, algo, ids, cols, rate, notes=None):
     """Provenance block, then a '#'-commented column ruler.
 
     Everything needed to interpret the run months later lives in the file
@@ -981,6 +1012,10 @@ def write_header(fh, cfg, algo, ids, cols, rate):
     w(f'# started      {datetime.now().isoformat(timespec="seconds")}\n')
     w(f'# drones       {", ".join(ids)}\n')
     w(f'# sample rate  {rate} Hz\n')
+    # Launch settings that are not in the config (velocity window, artificial
+    # noise, ...) and so would otherwise leave no trace in the record.
+    for note in notes or []:
+        w(f'# note         {note}\n')
     w('#\n# algorithm params:\n')
     for k, v in (cfg.get('algorithm', {}).get('params', {}) or {}).items():
         w(f'#   {k}: {v}\n')
@@ -1007,8 +1042,9 @@ def format_row(values):
 
 class MetricsRecorder(Node):
 
-    def __init__(self, cfg, path, rate, skip):
+    def __init__(self, cfg, path, rate, skip, notes=None, alias=None):
         super().__init__('metrics_recorder')
+        self._notes = list(notes or [])
         self.ids = [d['id'] for d in cfg['drones']]
         algo_cfg = cfg.get('algorithm', {})
         self.algo = algo_cfg.get('name', 'Unknown')
@@ -1030,14 +1066,24 @@ class MetricsRecorder(Node):
         self._pos = {i: None for i in self.ids}
         self._vel = {i: None for i in self.ids}
         self._z = {i: None for i in self.ids}
+        self._tilt = {i: None for i in self.ids}
+        # Receipt times, for the TIMING block: how regularly VICON poses and
+        # /state actually arrive, which the velocity fit silently depends on.
+        self._pose_t = {i: [] for i in self.ids}
+        self._pose_lat = {i: [] for i in self.ids}
+        self._state_t = {i: [] for i in self.ids}
         # /poses names the VICON rigid bodies (drone_1), the testbed names the
         # logical agents (drone1). Nothing publishes the mapping, so accept
         # either spelling rather than making the operator pass a third list
         # that has to stay in step with cf_name and mocap_name.
-        self._z_alias = {}
-        for i in self.ids:
-            for name in {i, i.replace('drone', 'drone_'), i.replace('_', '')}:
-                self._z_alias[name] = i
+        # Matching by number is WRONG whenever the two do not line up -- on
+        # fig4, agent drone4 flies as VICON drone_2, and the 2026-09-09 records
+        # filed its height under drone2. --hw/--mocap-name give the real map.
+        self._z_alias = dict(alias or {})
+        if not self._z_alias:
+            for i in self.ids:
+                for name in {i, i.replace('drone', 'drone_'), i.replace('_', '')}:
+                    self._z_alias[name] = i
         self._t0 = None
         self._moving_at = None
         self._moving_since = None
@@ -1070,7 +1116,10 @@ class MetricsRecorder(Node):
 
     def _write_header(self, cfg, rate):
         write_header(self._fh, cfg, self.algo, self.ids,
-                     self.metrics.columns(), rate)
+                     (self.metrics.columns()
+                      if isinstance(self.metrics, KuramotoMetrics)
+                      else self.metrics.all_columns()),
+                     rate, notes=self._notes)
         if isinstance(self.metrics, KuramotoMetrics):
             self._fh.write(
                 '# Kuramoto: phases radians; positions/errors metres; ages seconds.\n'
@@ -1084,15 +1133,32 @@ class MetricsRecorder(Node):
     def _state_cb(self, drone_id, msg):
         if len(msg.data) < 4 or not np.all(np.isfinite(msg.data[:4])):
             return
-        self._state_time[drone_id] = self.get_clock().now().nanoseconds * 1e-9
+        now = self._now()
+        self._state_time[drone_id] = now
+        self._state_t[drone_id].append(now)
         self._pos[drone_id] = np.array(msg.data[0:2], dtype=float)
         self._vel[drone_id] = np.array(msg.data[2:4], dtype=float)
 
+    def _now(self):
+        return self.get_clock().now().nanoseconds * 1e-9
+
     def _poses_cb(self, msg):
+        now = self._now()
+        header = getattr(msg, 'header', None)
+        stamp = (header.stamp.sec + header.stamp.nanosec * 1e-9
+                 if header is not None else 0.0)
         for named in msg.poses:
             did = self._z_alias.get(named.name)
-            if did is not None:
-                self._z[did] = float(named.pose.position.z)
+            if did is None:
+                continue
+            self._z[did] = float(named.pose.position.z)
+            q = named.pose.orientation
+            c = 1.0 - 2.0 * (q.x * q.x + q.y * q.y)   # cos of the tilt angle
+            self._tilt[did] = (math.degrees(math.acos(max(-1.0, min(1.0, c))))
+                               if math.isfinite(c) else None)
+            self._pose_t[did].append(now)
+            if stamp > 0.0:
+                self._pose_lat[did].append(now - stamp)
 
     def _phase_cb(self, drone_id, msg):
         if math.isfinite(msg.data):
@@ -1142,7 +1208,11 @@ class MetricsRecorder(Node):
                 [now - self._phase_time[i] for i in self.ids],
                 [now - self._state_time[i] for i in self.ids], self._active)
         else:
-            row = self.metrics.row(t, pos, vel)
+            # Every other algorithm keeps the z and tilt columns (appended
+            # after its own, so no existing column index moves).
+            row = self.metrics.full_row(t, pos, vel,
+                                        [self._z[i] for i in self.ids],
+                                        [self._tilt[i] for i in self.ids])
         if row is None:
             return
         self._rows.append(row)
@@ -1155,6 +1225,51 @@ class MetricsRecorder(Node):
             self._since_flush = 0
 
     # -- analysis ----------------------------------------------------------
+
+    def timing_lines(self):
+        """How regularly VICON poses and /state really arrived.
+
+        mocap_state_node fits velocity against the arrival times, so irregular
+        arrival does not corrupt the slope -- but the fit is only as current as
+        its window, and a window of N samples is (N-1)/2 samples old. This
+        measures the rate that sets that lag, the jitter and the dropouts. The
+        raw receipt times are saved next to the record as <record>_timing.npz.
+        """
+        out = ['', '  TIMING (receipt times on this machine)']
+        found = False
+        for i in self.ids:
+            pt = np.array(self._pose_t[i])
+            if len(pt) < 10:
+                continue
+            found = True
+            dt = np.diff(pt) * 1000.0
+            p50 = float(np.median(dt))
+            gaps = int((dt > 20.0).sum())
+            out.append(f'    {i:8s} VICON  {1000.0 / p50:6.1f} Hz   dt p50 {p50:5.1f}  '
+                       f'p95 {np.percentile(dt, 95):5.1f}  max {dt.max():6.0f} ms   '
+                       f'gaps >20 ms: {gaps} ({100.0 * gaps / len(dt):.1f}%)')
+            st = np.array(self._state_t[i])
+            if len(st) >= 10:
+                sd = np.diff(st) * 1000.0
+                out.append(f'    {"":8s} /state {1000.0 / np.median(sd):6.1f} Hz   '
+                           f'dt p50 {np.median(sd):5.1f}  p95 {np.percentile(sd, 95):5.1f}  '
+                           f'max {sd.max():6.0f} ms')
+            lat = np.array(self._pose_lat[i])
+            if len(lat) >= 10:
+                out.append(f'    {"":8s} VICON stamp -> receipt  p50 '
+                           f'{np.median(lat) * 1000:6.1f} ms  p95 '
+                           f'{np.percentile(lat, 95) * 1000:6.1f} ms')
+            out.append(f'    {"":8s} velocity-fit lag at this rate:  ' + '   '.join(
+                f'window {n}: {(n - 1) / 2 * p50:4.0f} ms' for n in (5, 10, 20)))
+        if not found:
+            return []
+        try:
+            np.savez(self.path.replace('.txt', '_timing.npz'),
+                     **{f'pose_{i}': np.array(self._pose_t[i]) for i in self.ids},
+                     **{f'state_{i}': np.array(self._state_t[i]) for i in self.ids})
+        except Exception:                   # noqa: BLE001
+            pass
+        return out
 
     def finish(self):
         if self._fh.closed:
@@ -1196,6 +1311,14 @@ class MetricsRecorder(Node):
             lines += self.metrics.altitude_lines(t[keep], data[keep])
         except Exception as exc:            # noqa: BLE001
             lines.append(f'  altitude analysis failed: {exc}')
+        try:
+            lines += self.metrics.tilt_lines(t[keep], data[keep])
+        except Exception as exc:            # noqa: BLE001
+            lines.append(f'  tilt analysis failed: {exc}')
+        try:
+            lines += self.timing_lines()
+        except Exception as exc:            # noqa: BLE001
+            lines.append(f'  timing analysis failed: {exc}')
 
         text = '\n'.join('# ' + ln if ln else '#' for ln in lines) + '\n'
         self._fh.write(text)
@@ -1231,9 +1354,15 @@ def reanalyse(path, cfg, t_from, t_to):
         # that is unavailable instead of refusing the whole file.
         short = expected - data.shape[1]
         n = len(ids)
-        if short > 0 and short % n == 0 and short <= 3 * n:
-            missing = ['altitude'] if short == n else (
-                ['wobble'] if short == 2 * n else ['wobble', 'altitude'])
+        # Blocks in the order they were added, newest first: tilt, z, and the
+        # flocking per-drone x/y (two columns per drone).
+        missing, left = [], short
+        for name, width in (('tilt', n), ('altitude', n), ('wobble', 2 * n)):
+            if left <= 0:
+                break
+            missing.append(name)
+            left -= width
+        if short > 0 and left == 0:
             print(f'[metrics] {os.path.basename(path)} predates the '
                   f'{" and ".join(missing)} column(s); that analysis is '
                   f'unavailable for it.')
@@ -1262,7 +1391,27 @@ def reanalyse(path, cfg, t_from, t_to):
              f'({int(keep.sum())} of {len(t)} samples)', '']
     lines += metrics.summarise(t[keep], data[keep], pos_hist)
     lines += metrics.altitude_lines(t[keep], data[keep])
+    lines += metrics.tilt_lines(t[keep], data[keep])
     print('\n'.join(lines))
+
+
+def installed_config(config_path):
+    """The copy of this config that the flight will actually load, or None.
+
+    algorithm_manager resolves config:=config/<name>.yaml against the package
+    SHARE directory -- the copy colcon installed -- not against the file this
+    recorder was handed. When the two differ, a header built from --config
+    describes a flight that never happened. That is how the 2026-09-09
+    "rescale 14" record came to carry rescale-14 params over a rescale-10
+    flight (docs/PROJECT_AIM.md section 11b).
+    """
+    try:
+        from ament_index_python.packages import get_package_share_directory
+        share = get_package_share_directory('drone_testbed')
+    except Exception:
+        return None
+    path = os.path.join(share, 'config', os.path.basename(config_path))
+    return path if os.path.exists(path) else None
 
 
 def main():
@@ -1281,6 +1430,17 @@ def main():
                     help='directory for the record file (default: logs/)')
     ap.add_argument('--rate', type=float, default=10.0,
                     help='samples per second (default: 10)')
+    ap.add_argument('--note', action='append', default=[],
+                    help='free text written into the header; repeatable. Use it '
+                         'for launch settings the config cannot show, e.g. '
+                         '--note "velocity_window 20" --note "mocap_noise 0.01"')
+    ap.add_argument('--hw', default='',
+                    help='the real drones, same list as the launch hw_drone:= '
+                         '(e.g. drone1,drone4)')
+    ap.add_argument('--mocap-name', default='',
+                    help='their VICON names, same list as mocap_name:= (e.g. '
+                         'drone_1,drone_2). Without --hw/--mocap-name, z and tilt '
+                         'are matched by number, which mislabels fig4.')
     ap.add_argument('--skip', type=float, default=None,
                     help='seconds to exclude from the analysis; default is to '
                          'auto-detect when the fleet starts moving')
@@ -1297,6 +1457,40 @@ def main():
         raise SystemExit('recording needs ROS 2 -- source the workspace first. '
                          '(--analyse works without it.)')
 
+    notes = list(a.note)
+    hw = [x.strip() for x in a.hw.split(',') if x.strip()]
+    mocap = [x.strip() for x in a.mocap_name.split(',') if x.strip()]
+    if len(hw) != len(mocap):
+        raise SystemExit(f'--hw {hw} and --mocap-name {mocap} must be the same '
+                         f'length, matched positionally like the launch file')
+    alias = dict(zip(mocap, hw))
+    if alias:
+        notes.append('real drones ' + ', '.join(f'{h}=VICON {m}' for m, h in alias.items()))
+    twin = installed_config(a.config)
+    if twin and os.path.realpath(twin) != os.path.realpath(a.config):
+        with open(twin) as f:
+            installed = yaml.safe_load(f)
+        if (installed.get('algorithm') != cfg.get('algorithm')
+                or installed.get('drones') != cfg.get('drones')):
+            mine = (cfg.get('algorithm', {}) or {}).get('params', {}) or {}
+            theirs = (installed.get('algorithm', {}) or {}).get('params', {}) or {}
+            diffs = [f'{k}: {mine.get(k)} in --config, {theirs.get(k)} installed'
+                     for k in sorted(set(mine) | set(theirs))
+                     if mine.get(k) != theirs.get(k)]
+            bar = '!' * 74
+            print(f'\n{bar}\n'
+                  f'  --config DIFFERS FROM THE INSTALLED COPY THE FLIGHT WILL LOAD\n'
+                  f'    --config   {a.config}\n'
+                  f'    installed  {twin}\n'
+                  + ''.join(f'    {d}\n' for d in diffs) +
+                  '  Recording the INSTALLED params, because those are what fly.\n'
+                  '  If you meant to fly the new ones: stop, copy the yaml into\n'
+                  '  ~/ros2_ws/src/drone_testbed/config/, colcon build, relaunch.\n'
+                  f'{bar}\n')
+            notes.append(f'--config {a.config} differed from the installed copy; '
+                         f'the params below are the INSTALLED ones')
+            cfg = installed
+
     algo = cfg.get('algorithm', {}).get('name', 'unknown')
     os.makedirs(a.out_dir, exist_ok=True)
     stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -1307,7 +1501,7 @@ def main():
     if not math.isfinite(a.rate) or a.rate <= 0:
         ap.error('--rate must be positive and finite')
     rclpy.init()
-    node = MetricsRecorder(cfg, path, a.rate, a.skip)
+    node = MetricsRecorder(cfg, path, a.rate, a.skip, notes, alias)
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

@@ -100,7 +100,7 @@ drones:
 # is what makes this flyable -- as published the periods are 114s and 381s and
 # the figure is a snapshot at t = 2500s.
 #
-# Measured from the gains actually written below (rescale 10), by computing the
+# Measured from the gains actually written below (rescale 14), by computing the
 # closed-loop eigenvalues and by running the design tool on THESE starting
 # positions (initial_position above is unchanged -- the rescaling does not move
 # the marks, so the floor tape stays where it is):
@@ -130,6 +130,13 @@ drones:
 # the result bears no relation to the control law. That is what happened on
 # 2026-09-02, where the command saturated from t=2.0s and the published law
 # never actually ran. Do not set max_accel just above the predicted peak.
+#
+# AND UNTIL 2026-09-15 IT NEVER REACHED THE DRONES. hardware_hybrid.launch.py
+# did not pass max_accel on, so crazyflie_node and drone_node clipped every
+# command at their own 0.5 default. Every trochoidal hardware flight before that
+# date -- the rescale-10 ones included -- flew the real drones with their command
+# saturated on 85-96% of ticks (docs/PROJECT_AIM.md section 11h). The launch now
+# passes it through (max_acceleration:=config, the default).
 #
 # Peak speed is 0.185 m/s (0.081 at rescale 6, 0.133 at 10), inside the 0.7
 # clamp -- speed is not what limits this ladder, beta is.

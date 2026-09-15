@@ -19,6 +19,12 @@ sqrt(12/(N(N^2-1)))/dt, about 13x better at N=10, in exchange for a lag of
 fixed dt) also makes it immune to the jitter and dropped frames that made the
 old wall-clock division occasionally produce enormous spikes.
 
+ARTIFICIAL NOISE. position_noise_std adds zero-mean Gaussian noise (metres per
+axis, independent for every sample) to each VICON position before anything uses
+it -- the published position and the velocity fit alike -- so the algorithm
+sees a worse sensor and nothing else changes. It exists to widen the gap to
+theory on purpose (docs/PROJECT_AIM.md section 12, T3). Leave it at 0.
+
 Topics:
   Subscribes: /poses                  (NamedPoseArray from VICON)
   Publishes:  /<drone_id>/state       (Float64MultiArray [x, y, vx, vy])
@@ -53,11 +59,16 @@ class MocapStateNode(Node):
         # dropout cannot leave the window straddling a gap and report a
         # velocity averaged across the missing stretch.
         self.declare_parameter('velocity_max_age', 0.25)  # seconds
+        # Artificial sensor noise, for experiments only -- see the docstring.
+        self.declare_parameter('position_noise_std', 0.0)  # metres, per axis
 
         self._drone_id = self.get_parameter('drone_id').value
         self._mocap_name = self.get_parameter('mocap_name').value
         self._window = max(2, int(self.get_parameter('velocity_window').value))
         self._max_age = float(self.get_parameter('velocity_max_age').value)
+        self._noise = max(
+            0.0, float(self.get_parameter('position_noise_std').value))
+        self._rng = np.random.default_rng()
 
         self._samples = deque(maxlen=self._window)   # (t, x, y)
 
@@ -87,6 +98,11 @@ class MocapStateNode(Node):
             f'({gain:.3f}x the noise of a raw difference, '
             f'~{(n - 1) / 2:.1f} samples of lag)'
         )
+        if self._noise > 0.0:
+            self.get_logger().warn(
+                f'ARTIFICIAL NOISE ON: {self._noise * 1000:.1f} mm per axis added '
+                f'to every VICON position of "{self._mocap_name}"'
+            )
 
     def _velocity(self):
         """Least-squares slope of position against time over the window.
@@ -124,6 +140,8 @@ class MocapStateNode(Node):
                 named_pose.pose.position.x,
                 named_pose.pose.position.y,
             ])
+            if self._noise > 0.0:
+                pos = pos + self._rng.normal(0.0, self._noise, 2)
 
             self._samples.append((now, pos[0], pos[1]))
             vel = self._velocity()

@@ -1,0 +1,57 @@
+# VARIANT of testbed_fig4.yaml for next-lab test T0 (docs/PROJECT_AIM.md
+# section 12). Identical except the gains: rescale 10 instead of 14. Every
+# comment in testbed_fig4.yaml applies -- read it before flying (separation,
+# the acceleration clamp, beta).
+#
+# Why this rung again: both rescale-10 flights on 2026-09-09 flew with the real
+# drones' command clipped at 0.5 m/s^2, because the launch never passed
+# max_accel on to crazyflie_node (section 11h). hardware_hybrid.launch.py now
+# does, so this is the first rescale-10 flight of the law as designed. Fly it
+# BEFORE rescale 14: same pattern and speed as the data we already have, only
+# the clamp differs, so any change is the clamp's doing. That also tests
+# whether the ~1.2 s shake (section 11e) is a saturation effect.
+#
+# Design numbers (tools/design_consensus_gains.py --theta 2.28488 --rescale 10):
+#   periods 38.1 s and 11.4 s, peak speed 0.133 m/s, peak accel 1.069 m/s^2
+#   (about 6 deg of tilt), envelope 0.355 m.
+#   flight_duration:=125.0  (3 slow periods, plus the transient)
+
+simulation:
+  dt: 0.1
+  control_rate: 10.0
+  sim_rate: 10.0
+  bounds: 1.5
+
+drones:
+  # Same marks as testbed_fig4.yaml. Fly drone1 and drone4 as the real pair --
+  # see SEPARATION in that file.
+  - id: "drone1"
+    initial_position: [0.235, -0.132]
+    initial_velocity: [0.0, 0.0]
+    role: "leader"
+  - id: "drone2"
+    initial_position: [0.013, 0.070]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone3"
+    initial_position: [-0.186, -0.034]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone4"
+    initial_position: [0.179, 0.219]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+
+algorithm:
+  name: "TrochoidalConsensus"
+  params:
+    alpha: 5.0642
+    beta:  10.0000
+    kappa: 0.9089
+    theta: 2.2849
+    max_accel: 1.8
+    adjacency:
+      drone1: {drone3: 5.0}
+      drone2: {drone1: 3.0, drone3: 1.0}
+      drone3: {drone1: 1.0, drone4: 2.0}
+      drone4: {drone1: 1.0, drone2: 5.0}
