@@ -8,3 +8,4 @@ from . import trochoidal_consensus
 from . import flocking
 from . import coverage
 from .kuramoto import KuramotoFormation
+from . import distance_formation
