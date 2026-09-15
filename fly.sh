@@ -162,6 +162,23 @@ if errs:
     sys.exit(1)
 PY
 
+# ---- nothing from a previous flight may still be running ----------------------
+# A launch that was not shut down cleanly leaves its nodes alive, and they keep
+# publishing. On 2026-09-15 that put three or four drone_node processes on every
+# /droneN/state topic (35 Hz on a topic one node publishes at 10 Hz) and two
+# algorithm_managers commanding the REAL drones from flickering states -- which
+# drove one aircraft directly on top of the other. Refuse to add to the pile.
+STALE="$(ros2 node list 2>/dev/null | grep -E \
+  '/(algorithm_manager|live_visualizer|drone_node_|crazyflie_node_|mocap_state_node_|crazyflie_server|motion_capture_tracking)' || true)"
+if [[ -n "$STALE" ]]; then
+  echo "[fly] REFUSING TO LAUNCH: nodes from a previous flight are still running:" >&2
+  echo "$STALE" | sed 's/^/[fly]     /' >&2
+  echo "[fly] stop them first, e.g.:" >&2
+  echo "[fly]     pkill -INT -f 'ros2 launch' ; sleep 5 ; pkill -f 'drone_testbed|crazyflie_server|motion_capture_tracking'" >&2
+  echo "[fly] then check with:  ros2 node list" >&2
+  exit 1
+fi
+
 # ---- run directory ------------------------------------------------------------
 RUN="$REPO/logs/${CONFIG_NAME}_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$RUN"
