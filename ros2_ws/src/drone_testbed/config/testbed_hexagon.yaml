@@ -59,18 +59,25 @@ drones:
     initial_velocity: [0.0, 0.0]
     role: "follower"
 
-# Measured over 120 s from the starts above, at these gains:
+# Measured over 120 s from the starts above, at these gains
+# (tools/sim_baseline.py, 2026-09-15, after opening the hexagon up 0.6 -> 0.9):
 #
-#   settles (edge rms < 1 cm)   6.6 s
+#   settles (edge rms < 1 cm)   11.8 s   (was 6.6 s at 0.6 m / kp 0.6)
 #   final edge error            < 0.001 mm rms -- it is an exact equilibrium
 #   final shape error           < 0.001 mm after a rigid fit to the nominal
 #   final orientation           rotated from the nominal; set by the start
-#   peak speed                  0.242 m/s
-#   peak accel DEMAND           0.505 m/s^2 against the 0.5 clamp
-#   clipped                     0.0% of agent-ticks
+#   Lyapunov W                  monotone, 0 of 2400 ticks rose
 #   closest approach            0.289 m -- at t=0; it never gets tighter
-#   max radius                  0.720 m
+#   final neighbour gap         0.900 m
 #   centroid drift              0.00 cm, and that zero is not a rounding
+#
+# WHY kp CAME DOWN WITH side_length GOING UP. The gradient force scales with
+# (d^2 - d*^2), so from the same clustered start a bigger target means a much
+# bigger initial demand. At kp 0.6 the 0.9 m hexagon clipped: W rose on 1.6%
+# of ticks and the centroid walked 4 cm; at 1.2 m it walked 72 cm. kp 0.15 is
+# the largest round value that keeps clipping at exactly zero from this start.
+# Push side_length further and kp has to follow it down again, or the start
+# has to open out with it.
 #
 # THE CENTROID ZERO IS A REAL PREDICTION, NOT A COINCIDENCE. Because
 # e_ij = e_ji, the interaction forces cancel exactly in pairs, so the fleet
@@ -83,8 +90,8 @@ drones:
 algorithm:
   name: "DistanceFormation"
   params:
-    side_length: 0.6         # m. For a hexagon this is also the circumradius,
-                             # so the shape fits inside a 0.6 m circle.
+    side_length: 0.9         # m. For a hexagon this is also the circumradius,
+                             # so the shape fits inside a 0.9 m circle.
     formation_center: [0.0, 0.0]
     formation_rotation: 0.0  # Reference only. The law CANNOT set the angle;
                              # this just says what the metrics compare against.
@@ -114,7 +121,8 @@ algorithm:
     # stop moving, while `minimal` converges perfectly -- to the wrong shape.
     topology: "octahedron"
 
-    gain_kp: 0.6             # gradient gain
+    gain_kp: 0.15            # gradient gain -- see the note above; 0.6 clips
+                             # at this size
     gain_kv: 1.2             # damping. The published double-integrator term,
                              # NOT an adaptation of ours -- contrast coverage.py
     max_accel: 0.5           # m/s^2, matches crazyflie_node's clamp

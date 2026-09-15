@@ -295,18 +295,53 @@ The drone will take off to 0.5 m, hover, move up to 0.8 m, return to 0.5 m, then
 
 ## Running a Distributed Algorithm on Hardware
 
-Once the basic flight test works, launch the full stack:
+Once the basic flight test works, `fly.sh` runs the whole stack from one terminal:
+
+```bash
+./fly.sh testbed_hexagon_hybrid --real drone1,drone4 --duration 95
+./fly.sh testbed_fig4 --real drone1,drone4=drone_2       # drone4 slot on airframe drone_2
+./fly.sh testbed_fig4 --real drone1 --check              # validate + print the plan only
+./fly.sh --help
+```
+
+It starts Crazyswarm2, waits for `/poses`, launches `hardware_hybrid.launch.py`
+with `hw_drone`/`cf_name`/`mocap_name` derived from `--real` (`droneN → drone_N`),
+then starts `tools/metrics_recorder.py`. One Ctrl-C shuts them down in reverse:
+the flight is interrupted first so every drone lands, then the recorder writes
+its analysis, then the radio server goes. Everything — console logs, the metrics
+file and a copy of the config as flown — lands in `logs/<config>_<timestamp>/`.
+
+Before anything is armed it refuses to launch if a `--real` drone is missing
+from the testbed config, is missing or `enabled: false` in `config/crazyflies.yaml`,
+or if an airframe is enabled there but not in `--real` (the server would stall
+waiting for it). `config/crazyflies.yaml` and `config/motion_capture.yaml` are
+copied into the Crazyswarm2 share directory only when they differ, so a repeat
+flight does not prompt for `sudo`.
+
+Options: `--no-gui`, `--no-metrics`, `--record` (adds `tools/flight_recorder.py`
+per real drone), `-y` to skip the confirmation, and anything after `--` is passed
+straight to the launch file (`-- takeoff_height:=0.8,1.2 geofence:=1.2`).
+
+Emergency stop from another terminal, for any number of drones:
+
+```bash
+ros2 topic pub --once /sim/abort std_msgs/String '{data: manual}'
+```
+
+The three terminals it replaces, if you need them separately:
 
 ```bash
 # Terminal 1 — Crazyswarm2
-ros2 launch crazyflie launch.py
+ros2 launch crazyflie launch.py backend:=cflib
 
-# Terminal 2 — VICON state + algorithm
-ros2 launch drone_testbed hardware_single.launch.py \
-    drone_id:=drone1 cf_name:=cf1 mocap_name:=cf1
+# Terminal 2 — VICON state + algorithm (real drones listed positionally)
+ros2 launch drone_testbed hardware_hybrid.launch.py \
+    config:=config/testbed_fig4.yaml \
+    hw_drone:=drone1,drone4 cf_name:=drone_1,drone_4 mocap_name:=drone_1,drone_4
+
+# Terminal 3 — metrics
+python3 tools/metrics_recorder.py --config ros2_ws/src/drone_testbed/config/testbed_fig4.yaml
 ```
-
-The active algorithm is set in `config/testbed.yaml` under `algorithm.name`.
 
 ---
 
@@ -366,7 +401,7 @@ error tests something no paper claimed — see `docs/PROJECT_AIM.md`.
 | **DistanceFormation** | per-edge distance error, and separately whether the shape satisfying those edges was the one asked for; the Lyapunov function, which the continuous law forbids from rising; and the fleet centroid, which the continuous law forbids from moving |
 | anything else | positions, velocities and pairwise distances |
 
-Run it in a third terminal alongside the usual two:
+`fly.sh` starts it automatically. To run it by hand in a third terminal:
 
 ```bash
 python3 tools/metrics_recorder.py \
@@ -412,6 +447,7 @@ The VICON PC requires no software changes if it is already running VICON Tracker
 multi-drone-testbed/
 ├── run_sim.py                         # Standalone simulation (no ROS2 needed)
 ├── run_hardware_test.sh               # One-drone hardware flight test
+├── fly.sh                             # One-command hardware/hybrid flight (replaces 3 terminals)
 ├── setup.sh                           # Ubuntu 22.04/24.04 one-time setup script
 ├── config/
 │   ├── crazyflies.yaml                # Drone radio URI + VICON body name
