@@ -204,39 +204,60 @@ if [[ ${#REAL_IDS[@]} -gt 0 ]] && ! $ASSUME_YES; then
 fi
 
 # ---- process management -------------------------------------------------------
+# Each background process goes into its OWN session (os.setsid) with SIGINT
+# reset to default, via a tiny Python shim that then execs the real command.
+# Two reasons, both learned the hard way:
+#
+#   * bash's own tools do not work here. Without job control, `cmd &` starts
+#     cmd with SIGINT *ignored*, and Python inherits that, so a later kill -INT
+#     to ros2 launch is silently dropped. With job control (set -m) the
+#     opposite failure: Ctrl-C at the terminal goes to whichever foreground
+#     `sleep` this script is in, the trap below never fires, and the flight
+#     carries on -- exactly the "Ctrl-C did not stop the drones" symptom.
+#   * Being in a separate session means the terminal's Ctrl-C reaches only this
+#     script, never the children directly, so the ORDER of shutdown below is
+#     actually honoured instead of every process getting the signal at once.
+#
+# ros2 launch must get SIGINT specifically: on SIGTERM it stops its own loop
+# and ORPHANS the nodes, which leaves crazyflie_node streaming setpoints to a
+# drone nobody can land any more.
 PIDS=(); NAMES=()
+SHIM='import os, signal, sys
+os.setsid()
+signal.signal(signal.SIGINT, signal.SIG_DFL)
+os.execvp(sys.argv[1], sys.argv[1:])'
 start() {   # start NAME CMD... -- background, output to console and to a log
   local name="$1"; shift
   log "starting $name"
-  ( "$@" 2>&1 | tee "$RUN/$name.log" ) &
+  python3 -c "$SHIM" "$@" > >(exec tee "$RUN/$name.log") 2>&1 &
   PIDS+=($!); NAMES+=("$name")
 }
-# The subshell owns the pipeline, so signal the whole process group of it.
-stop() {   # stop INDEX TIMEOUT
+stop() {   # stop INDEX TIMEOUT -- SIGINT the whole process group, wait, escalate
   local pid="${PIDS[$1]}" name="${NAMES[$1]}" t="$2"
   kill -0 "$pid" 2>/dev/null || return 0
   log "stopping $name"
-  kill -INT -- "-$pid" 2>/dev/null || kill -INT "$pid" 2>/dev/null || true
+  kill -INT -- "-$pid" 2>/dev/null || true
   for ((i = 0; i < t * 10; i++)); do
     kill -0 "$pid" 2>/dev/null || return 0
     sleep 0.1
   done
   log "$name did not exit in ${t}s, killing"
-  kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+  kill -KILL -- "-$pid" 2>/dev/null || true
 }
-set -m   # job control on, so each background pipeline gets its own process group
 
 shutting_down=false
 shutdown() {
   $shutting_down && return; shutting_down=true
   trap - INT TERM
   echo
-  # Reverse order of start(), so the flight lands before the server goes.
+  # The flight first, always -- the drones land while nothing else is touched.
+  # Then the rest in reverse start order, so the recorders write their analysis
+  # before the radio server, which they do not depend on, goes away last.
+  for ((k = 0; k < ${#PIDS[@]}; k++)); do
+    [[ "${NAMES[$k]}" == flight ]] && stop "$k" 30   # land (~5 s) + sigterm_timeout (20 s)
+  done
   for ((k = ${#PIDS[@]} - 1; k >= 0; k--)); do
-    case "${NAMES[$k]}" in
-      flight)  stop "$k" 25 ;;   # takeoff hand-back + LAND_DURATION + margin
-      *)       stop "$k" 10 ;;
-    esac
+    [[ "${NAMES[$k]}" == flight ]] || stop "$k" 10
   done
   log "done. logs in ${RUN#$REPO/}"
 }
@@ -258,7 +279,11 @@ if [[ ${#REAL_IDS[@]} -gt 0 ]]; then
 fi
 
 # 2. The flight.
-start flight ros2 launch drone_testbed hardware_hybrid.launch.py "${LAUNCH_ARGS[@]}"
+# sigterm_timeout: after SIGINT, ros2 launch waits this long before escalating
+# to SIGTERM. Its default of 5 s is shorter than notifySetpointsStop + land +
+# the 4.5 s sleep in crazyflie_node.land(), so give the landing room.
+start flight ros2 launch drone_testbed hardware_hybrid.launch.py \
+  sigterm_timeout:=20 "${LAUNCH_ARGS[@]}"
 FLIGHT_IDX=$(( ${#PIDS[@]} - 1 ))
 
 # 3. Recorders. metrics_recorder analyses on Ctrl-C, so it must be stopped
