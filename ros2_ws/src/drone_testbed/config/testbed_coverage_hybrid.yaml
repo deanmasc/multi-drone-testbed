@@ -101,8 +101,18 @@ algorithm:
     max_accel: 0.5           # matches crazyflie_node's clamp
     grid_res: 36             # density-integral samples per axis, per cell
 
-    density: "uniform"       # even partition. See testbed_coverage.yaml for the
-                             # gaussian-hotspot (region-of-interest) variant.
+    density: "uniform"       # even partition.
+
+    # --- Moving-hotspot tracking sweep: uncomment to make the fleet chase an
+    # --- orbiting region of interest instead of holding an even partition.
+    # --- Required tangential speed to keep up is ~hotspot_orbit_radius *
+    # --- hotspot_speed; pick values well under max_vel (0.7 m/s) to see clean
+    # --- tracking, and up near it to find where the lag actually shows up.
+    # density: "gaussian"
+    # hotspot_center: [0.0, 0.0]
+    # hotspot_sigma: 0.4        # < region_half_width margin
+    # hotspot_speed: 0.15       # rad/s; 0 = stationary. ~0.06 m/s required here
+    # hotspot_orbit_radius: 0.6 # m, stays inside the 1.3 m region
 
     # Cost-history log for the writeup: H(p) across the real+virtual fleet.
     # "" = timestamped file in the launch directory.

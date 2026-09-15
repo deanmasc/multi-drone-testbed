@@ -45,6 +45,7 @@ COLUMNS = [
     'vic_x', 'vic_y', 'vic_z', 'vic_roll', 'vic_pitch', 'vic_yaw',
     'est_x', 'est_y', 'est_z', 'est_yaw',
     'st_x', 'st_y', 'st_vx', 'st_vy',
+    'acc_x', 'acc_y',
     'cmd_x', 'cmd_y',
     'set_x', 'set_y',
 ]
@@ -71,14 +72,16 @@ class FlightRecorder(Node):
         # topic that never connected is the failure most likely to waste a lab
         # session -- far better to see it in the first second than afterwards.
         self._seen = {'poses': 0, 'pose(onboard)': 0, 'state': 0,
-                      'cmd_pos': 0, 'setpoint': 0, 'status': 0}
+                      'cmd_accel': 0, 'cmd_pos': 0, 'setpoint': 0, 'status': 0}
         self._t0 = None
 
         self._f = open(out_path, 'w', buffering=1)   # line buffered: Ctrl+C safe
         self._f.write(
             '# Flight recorder. Positions m, angles deg, time s from first sample.\n'
             f'# vic_* = VICON ({cf_name}).  est_* = the drone\'s OWN estimate.\n'
-            '# st_* = /state as the algorithm sees it.  cmd_* = algorithm intent.\n'
+            '# st_* = /state as the algorithm sees it.  acc_* = raw cmd_accel\n'
+            '# (every algorithm publishes this).  cmd_* = explicit setpoint\n'
+            '# intent (trajectory algorithms only -- nan for reactive ones).\n'
             '# set_* = setpoint actually streamed.  Missing = nan.\n'
             '# ' + ' '.join(COLUMNS) + ' status\n'
         )
@@ -90,6 +93,8 @@ class FlightRecorder(Node):
                                  self._onboard_cb, 10)
         self.create_subscription(Float64MultiArray, f'/{drone_id}/state',
                                  self._state_cb, 10)
+        self.create_subscription(Float64MultiArray, f'/{drone_id}/cmd_accel',
+                                 self._accel_cb, 10)
         self.create_subscription(Float64MultiArray, f'/{drone_id}/cmd_pos',
                                  self._cmd_cb, 10)
         self.create_subscription(Float64MultiArray, f'/{drone_id}/setpoint',
@@ -132,6 +137,11 @@ class FlightRecorder(Node):
             self._seen['state'] += 1
             self._v.update(st_x=msg.data[0], st_y=msg.data[1],
                            st_vx=msg.data[2], st_vy=msg.data[3])
+
+    def _accel_cb(self, msg):
+        if len(msg.data) >= 2:
+            self._seen['cmd_accel'] += 1
+            self._v.update(acc_x=msg.data[0], acc_y=msg.data[1])
 
     def _cmd_cb(self, msg):
         if len(msg.data) >= 2:
