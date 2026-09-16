@@ -265,7 +265,7 @@ stop() {   # stop INDEX TIMEOUT -- SIGINT the whole process group, wait, escalat
 shutting_down=false
 shutdown() {
   $shutting_down && return; shutting_down=true
-  trap - INT TERM
+  trap - INT TERM HUP EXIT
   echo
   # The flight first, always -- the drones land while nothing else is touched.
   # Then the rest in reverse start order, so the recorders write their analysis
@@ -278,7 +278,11 @@ shutdown() {
   done
   log "done. logs in ${RUN#$REPO/}"
 }
-trap shutdown INT TERM
+# HUP: the terminal window was closed. EXIT: anything else that ends the
+# script early (a failing command under set -e). Both must still land the
+# fleet and take the nodes down, or the next launch inherits them.
+trap shutdown INT TERM HUP
+trap shutdown EXIT
 
 # 1. Crazyswarm2, then wait for the VICON bridge to actually publish.
 if [[ ${#REAL_IDS[@]} -gt 0 ]]; then
