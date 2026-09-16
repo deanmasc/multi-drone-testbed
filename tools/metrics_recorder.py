@@ -506,9 +506,17 @@ class CoverageMetrics(MetricSet):
         return self._algo is not None
 
     def columns(self):
+        # Positions added 2026-09-16 for the coverage speed ladder: without
+        # them a coverage record cannot be checked for the ~1.1 s oscillation
+        # of section 13, since wobble, tilt, delay and clipping all come from
+        # x/y. They go LAST, not next to t as in the other metric sets,
+        # because reanalyse() reads older records by assuming the columns have
+        # only ever grown at the end.
         cols = ['t', 'H']
         cols += [f'cdist_{i}' for i in self.ids]
         cols += ['cdist_max', 'cdist_mean']
+        for i in self.ids:
+            cols += [f'x_{i}', f'y_{i}']
         return cols
 
     def _cells(self, pos, t):
@@ -547,8 +555,11 @@ class CoverageMetrics(MetricSet):
             H += cost
             cdist.append(float(np.linalg.norm(centroid - pos[k])))
         cd = np.array(cdist)
-        return ([t, H] + cdist +
-                [float(np.nanmax(cd)), float(np.nanmean(cd))])
+        out = ([t, H] + cdist +
+               [float(np.nanmax(cd)), float(np.nanmean(cd))])
+        for k in range(len(pos)):
+            out += [float(pos[k, 0]), float(pos[k, 1])]
+        return out
 
     def _lloyd_optimum(self, start, iters=400):
         """Run Lloyd's iteration offline, as fast as geometry allows.
@@ -1679,10 +1690,21 @@ def reanalyse(path, cfg, t_from, t_to):
     if keep.sum() < 4:
         raise SystemExit(f'only {int(keep.sum())} samples in [{lo}, {hi}]')
 
-    # Coverage's optimality comparison needs starting positions, which the
-    # recorded columns do not carry. Fall back to the config's marks.
-    pos_hist = [np.array([d['initial_position'] for d in cfg['drones']],
-                         dtype=float)]
+    # Records from 2026-09-16 on carry x/y for every algorithm, so the real
+    # start and finish are recoverable. Older ones do not: fall back to the
+    # config's marks, which is right for the start and silent about the end.
+    cols = metrics.all_columns()
+    if all(f'x_{i}' in cols for i in ids):
+        xy = [[cols.index(f'x_{i}'), cols.index(f'y_{i}')] for i in ids]
+        rows = data[keep]
+        pos_hist = [np.array([[r[a], r[b]] for a, b in xy], dtype=float)
+                    for r in (rows[0], rows[-1])]
+        if not np.isfinite(pos_hist[0]).all():        # padded old record
+            pos_hist = [np.array([d['initial_position'] for d in cfg['drones']],
+                                 dtype=float)]
+    else:
+        pos_hist = [np.array([d['initial_position'] for d in cfg['drones']],
+                             dtype=float)]
 
     lines = ['', '=' * 74,
              f'RE-ANALYSIS -- {algo}', '=' * 74, '',
