@@ -761,8 +761,9 @@ The same design, slower. Three configs, made 16 Sep and verified in simulation
 design itself needs only 0.04–0.17 m/s² here, so the clamp should never engage
 unless the oscillation comes back.
 
-**Fly r3 first** — it is clearly below the ceiling. Then r2 to confirm, then r4
-to find the edge. These are 3–4 minute flights, so use fresh batteries.
+**Status: r3 and r2 flown 16 Sep — section 14. The oscillation collapsed at r3
+and is essentially absent at r2, which flew the designed pattern. Fly r4 next to
+find the threshold.** These are 3–4 minute flights, so use fresh batteries.
 
 ```bash
 # T2
@@ -916,8 +917,8 @@ the node's own steps. The drone traces the same loops ~0.3 s behind, 10–13 cm 
 once that lag is allowed for. The loops are in the command. The drone does not
 add them. (The setpoint is not recorded; 12, item 6.)
 
-**Mechanism.** This is the best explanation of every observation so far. It has
-not yet been tested by a flight designed to break it.
+**Mechanism.** This is the best explanation of every observation so far, and it
+survived the flight designed to break it (section 14).
 
 - Trochoidal's command contains a velocity brake, −β·v. It asks the drone to
   cancel its velocity within 1/β = 0.07–0.17 s.
@@ -1230,7 +1231,8 @@ supervisor before any code is written. Not implemented.
   Treat the delay as ±0.03 s.
 - Other contributors inside the black box are not excluded. Examples: the
   0.7 m/s cap on the target velocity, and the 0.3 m leash.
-- No flight has yet been designed to break the explanation.
+- Tested 16 Sep at β = 3, below the ceiling: the oscillation collapsed as
+  predicted (section 14). One flight, one rung — r2 and r4 would pin it down.
 - The recorder's own trochoidal summary is still not quotable (11c).
 
 **To turn it into a known result:**
@@ -1270,3 +1272,134 @@ In `docs/figures/trochoidal_ladder/`; regenerate with
 | `5_tilt.png` | VICON tilt against the tilt the flown path needs |
 | `6_`, `7_commanded_vs_actual` | the drone against its (rebuilt) setpoint, at the start and mid-flight |
 | `8_`, `9_design_vs_actual` | the drone against the designed pattern, at the start and mid-flight |
+
+## 14. Hardware findings, 16 September 2026: below the ceiling
+
+*The flights section 13 called for. Same law, same clamp, same drones, same
+marks; only the speed is lower, so β falls from 6 to 3 and then 2, and β × delay
+from ~1.7 to ~0.9 and ~0.6. Records
+`logs/hw/trochoidalconsensus_20260916_143323.txt` (r3) and `_145915.txt` (r2).
+Replay confirms the config gains flew in both (0.1–0.2 cm).*
+
+### 14a. What changed
+
+| | r3 (16 Sep) | r6 | r10 | r14 |
+|---|---|---|---|---|
+| β × delay | **0.9** | 1.7 | 2.8 | 3.9 |
+| Command clipped at 3.5 m/s² | **0% of ticks** | 79–92% | 89–94% | 89–92% |
+| Wobble, RMS | **5.8–6.1 cm** | 17 cm | 15–19 cm | 15–16 cm |
+| Wobble envelope, median | **1.3–2.2 cm** | 17 cm | 15–20 cm | 16–17 cm |
+| Share of the flight above 10 cm | **12–15%** | 96–97% | 89–93% | 86–87% |
+| Tilt, median (VICON) | **3.3–4.4°** | 24–27° | 22–32° | 24–28° |
+| Real-drone speed (design) | **0.08–0.12 m/s** (0.03) | 0.83–0.90 (0.06) | 0.75–1.05 (0.11) | 0.82–0.90 (0.15) |
+| Fast period, hw vs design | **37.4 vs 38.1 s (−2%)** | 2–5× too slow | 2–5× | 2–5× |
+| Slow period, hw vs design | **117 vs 127 s (−8%)** | — | — | — |
+| Size change per fast lap | ×0.96 | ×1.05 | ×0.92 | ×0.94 |
+
+**The prediction held.** Everything the mechanism said depends on β × delay moved
+the way it should, and everything it said does not depend on β stayed put:
+- The command **never reached the clamp**, where at β = 6–14 it was clipped
+  ~90% of the time.
+- The drones' typical wobble fell from ~17 cm to ~2 cm, and the tilt from
+  ~25° to ~4°.
+- **The delay did not change:** 0.28–0.32 s, the same as every earlier flight.
+  It is a property of the hardware, not of the gains.
+- **The period of what wobble remains did not change either:** 1.16–1.28 s, still
+  ≈ 4 × the delay.
+
+**This is the first flight where the designed pattern actually survived.** The
+fast period is within 2% of the design and the slow within 8%, the fleet held
+its size (×0.96 per lap, so the slow mode's growth needs 21 laps to double
+against about 1 lap on the 0.5-clamp flights), and no drone approached the
+geofence in 186 s.
+
+### 14b. What did not go away
+
+The wobble is smaller but not gone, and it is no longer steady:
+- The envelope sits at 1–2 cm for most of the flight and bursts to 13–22 cm
+  about 12–15% of the time. At β = 6–14 it was above 10 cm essentially always.
+- Tilt follows the same shape: median 3.3–4.4°, p95 21°, max 32–35°.
+
+That is what the mechanism predicts just below the threshold. At β × delay ≈ 0.9
+the loop is stable but barely damped, so a disturbance rings at ~4 × delay and
+dies away instead of growing into a clamped limit cycle.
+
+**A likely source of the disturbances, and a confound to rule out.** VICON
+tracking was much worse on 16 Sep than on 15 Sep:
+
+| | 16 Sep (r3) | 15 Sep |
+|---|---|---|
+| Gaps > 20 ms | **5.5% of samples** | 1.0–1.3% |
+| Worst gap | 344 ms | 123 ms |
+
+A 344 ms hole makes the velocity fit jump when tracking returns, and β
+multiplies that jump. So some of the bursts may be dropout-driven rather than
+intrinsic. The `_timing.npz` for this flight would settle it by lining the
+bursts up against the gaps.
+
+### 14c. What this does and does not establish
+
+- **Establishes:** the oscillation follows β × delay, not β or the clamp alone,
+  and it collapses below the threshold with everything else held fixed. That is
+  the mechanism of 13c tested rather than merely consistent.
+- **Does not establish:** where exactly the threshold sits. r3 (0.9) is clean and
+  r6 (1.7) is not. r4 (1.1) would place it, and r2 (0.6) would show whether the
+  residual bursts keep shrinking.
+- **Still open:** the drones move 3–4× faster than the design asks (0.08–0.12
+  against 0.03 m/s), so the pattern is flown, but not quietly.
+
+### 14d. Rescale 2: the designed pattern, essentially clean
+
+β = 2, β × delay ≈ 0.6. This is the best flight the testbed has produced.
+
+| | r2 | r3 | r6 |
+|---|---|---|---|
+| β × delay | 0.6 | 0.9 | 1.7 |
+| Wobble, RMS | **1.0–1.2 cm** | 5.8–6.1 cm | 17 cm |
+| Wobble envelope, median | **0.6 cm** | 1.3–2.2 cm | 17 cm |
+| Time above 8 cm | **0%** in every window | 12–15% | ~100% |
+| Tilt, median (design) | **2.2–4.8°** (0.01°) | 3.3–4.4° | 24–27° |
+| Speed vs design | **0.04 vs 0.02 m/s (2×)** | 3–4× | 14× |
+| Command clipped | 0% | 0% | 79–92% |
+| Fast period, hw vs design | **57.05 vs 57.10 s (0%)** | −2% | 2–5× too slow |
+| Slow period, hw vs design | **189.5 vs 190.4 s (0%)** | −8% | — |
+| Period ratio (design 3.33) | **3.32** | 3.14 | — |
+| Mode fit R² | **0.98** | 0.84 | 0.73–0.88 |
+| Size change per fast lap | **×1.00** | ×0.96 | ×1.05 |
+
+- **The bursts are gone.** At r3 the wobble rang for the first ~60 s and reached
+  22 cm; at r2 it never exceeds 8 cm in any 30 s window, and sits at 0.6 cm.
+- **The pattern is the designed one.** Both periods land within a fraction of a
+  percent, the ratio matches, the fit is clean (R² 0.98), and the fleet held its
+  size exactly (×1.00 per lap) for 185 s.
+- **The delay is unchanged again:** 0.29–0.34 s, as on every flight since 2 Sep.
+- What remains is the drones flying about twice the designed speed, with a ~1 cm
+  residual wobble at the edge of the measurable band, and 2–5° of tilt where the
+  design asks for 0.01°.
+
+So the ladder now reads: **sustained oscillation at β = 6–14, a decaying
+transient at β = 3, and essentially nothing at β = 2.**
+
+### 14e. A measurement note: where each flight's window ends
+
+`plot_trochoidal_ladder.py` now ends a flight's window at the first *sustained*
+tilt over 90° (half a second of it). A tilt that large means VICON lost the body
+or the drone has landed. The r2 record ends exactly that way: flips from 201 s, a
+jump to y = −3.3 m (outside the room), then frozen rows.
+
+Without the guard, that landing tail counted as flight and produced two
+artefacts: a "drone reached the 1.3 m edge at 188 s" verdict, and a 29 cm wobble
+burst in the last 30 s. Both are tracking, not flying. The rule requires half a
+second because single-row spikes happen (r6 has one at 64.8 s) and would
+otherwise throw away most of a good flight.
+
+### 14f. Next
+
+1. **r4** (`testbed_fig4_r4.yaml`, β × delay ≈ 1.1): the edge, and about where
+   flocking sits. With r2 clean, r3 ringing and r6 sustained, r4 is what places
+   the threshold.
+2. **Upload the `_timing.npz`** with the next record, so the r3 bursts can be
+   tested against the tracking dropouts.
+3. Flocking `c2a05` (12, item 2) remains the second-algorithm test.
+4. Optional, once the ladder is done: lever 3 (12, item 7), with the supervisor's
+   agreement.

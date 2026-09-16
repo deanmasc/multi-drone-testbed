@@ -36,6 +36,8 @@ LOGS = os.path.join(ROOT, 'logs', 'hw')
 # 15 Sep 2026: the first ladder with max_accel 3.5 actually reaching the drones.
 # (rung, record, config)
 RUNS = [
+    ('r2', 'trochoidalconsensus_20260916_145915.txt', 'testbed_fig4_r2.yaml'),
+    ('r3', 'trochoidalconsensus_20260916_143323.txt', 'testbed_fig4_r3.yaml'),
     ('r6', 'trochoidalconsensus_20260915_151744.txt', 'testbed_fig4_r6.yaml'),
     ('r10', 'trochoidalconsensus_20260915_145550.txt', 'testbed_fig4_r10.yaml'),
     ('r14', 'trochoidalconsensus_20260915_143416.txt', 'testbed_fig4.yaml'),
@@ -54,8 +56,11 @@ MUTED = '#6b7280'
 GRID = '#e5e7eb'
 DESIGN = '#9ca3af'
 # slow to fast, light to dark
-RUNG_COLOUR = {'r6': '#e3a33b', 'r10': '#d0661c', 'r14': '#98281c'}
-RUNG_X = {'r6': 6, 'r10': 10, 'r14': 14}
+RUNG_COLOUR = {'r2': '#f0cf6b', 'r3': '#e0a93c', 'r4': '#d98c2b',
+               'r6': '#cf6f1e', 'r10': '#b4441c', 'r14': '#8f2418'}
+# evenly spaced slots, not the beta value: r2/r3/r4 would otherwise collide
+RUNG_X = {'r2': 0, 'r3': 1, 'r4': 2, 'r6': 3, 'r10': 4, 'r14': 5}
+RUNGS = []                 # the rungs actually plotted, filled in main()
 DRONE_MARKER = {'drone1': 'o', 'drone4': 's'}
 # rung -> the typical speed its designed pattern asks of the real drones (median,
 # from simulation). Filled in main().
@@ -148,8 +153,27 @@ def analyse(label, rec, cfgname, clamp=CLAMP):
     t_eng = t[max(moved[0] - 1, 0)] if len(moved) else t_start
     far = np.nonzero((np.abs(P[:last + 1]) > EDGE).any(axis=(1, 2))
                      & (t[:last + 1] > t_start + 1))[0]
-    hit = len(far) > 0
-    t_end = t[far[0]] if hit else t[last]
+    # A tilt over 90 deg means VICON lost the body, or the drone has landed. The
+    # 16 Sep r2 record ends that way: flips at 201 s, a jump to y = -3.3 m (outside
+    # the room), then frozen rows. Everything after the first flip is tracking
+    # noise, not flight, so the window stops there.
+    # Require half a second of it: a single row over 90 deg is a mocap glitch
+    # (r6 has one at 64.8 s), while a real loss runs for hundreds of rows.
+    flips = []
+    for i in REAL:
+        c = f'tilt_{i}'
+        if c not in cols:
+            continue
+        bad = (D[:, cols.index(c)] > 90) & (t > t_start + 1)
+        run = 0
+        for k, v in enumerate(bad):
+            run = run + 1 if v else 0
+            if run >= 5:
+                flips.append(t[k - 4])
+                break
+    t_stop = min([t[last]] + flips)
+    hit = len(far) > 0 and t[far[0]] <= t_stop
+    t_end = t[far[0]] if hit else t_stop
     t0 = t_start + 2.0
 
     tg = np.arange(t0, t_end, DT)
@@ -268,15 +292,16 @@ def table(runs):
 # -- figures ------------------------------------------------------------------
 
 def _rung_axis(ax):
-    ax.set_xticks([6, 10, 14])
-    ax.set_xticklabels([f'{name(k)}\n({k})' for k in ('r6', 'r10', 'r14')])
-    ax.set_xlim(3.5, 16.5)
+    xs = [RUNG_X[k] for k in RUNGS]
+    ax.set_xticks(xs)
+    ax.set_xticklabels(RUNGS)
+    ax.set_xlim(min(xs) - 0.7, max(xs) + 0.7)
 
 
 def _dots(ax, runs, key, scale=1.0):
     for r in runs:
         for n, (i, v) in enumerate(r['drones'].items()):
-            ax.plot(RUNG_X[r['label']] + (n - 0.5) * 0.7, v[key] * scale,
+            ax.plot(RUNG_X[r['label']] + (n - 0.5) * 0.17, v[key] * scale,
                     marker=DRONE_MARKER[i], color=RUNG_COLOUR[r['label']], ms=7, ls='none')
 
 
@@ -284,7 +309,7 @@ def _design_bars(ax, runs, key, scale=1.0):
     for r in runs:
         val = max(v[key] for v in r['drones'].values()) * scale
         x = RUNG_X[r['label']]
-        ax.plot([x - 1.3, x + 1.3], [val, val], color=DESIGN, lw=3, solid_capstyle='butt')
+        ax.plot([x - 0.42, x + 0.42], [val, val], color=DESIGN, lw=3, solid_capstyle='butt')
 
 
 def fig_summary(runs, out):
@@ -292,12 +317,13 @@ def fig_summary(runs, out):
 
     ax = axs[0, 0]
     for r in runs:
-        ax.bar(RUNG_X[r['label']], r['per_lap'], width=2.2, color=RUNG_COLOUR[r['label']])
+        ax.bar(RUNG_X[r['label']], r['per_lap'], width=0.62, color=RUNG_COLOUR[r['label']])
         ax.text(RUNG_X[r['label']], r['per_lap'] + 0.04, f"×{r['per_lap']:.2f}",
                 ha='center', va='bottom', fontsize=8.5, color=INK)
     ax.axhline(1, color=INK, lw=0.8, ls='--')
     ax.axhline(2, color=MUTED, lw=0.6, ls=':')
-    ax.text(16.3, 2.03, 'would double every lap', ha='right', va='bottom', color=MUTED, fontsize=7.5)
+    ax.text(0.98, 0.84, 'would double every lap', transform=ax.transAxes, ha='right',
+            va='bottom', color=MUTED, fontsize=7.5)
     ax.set_ylim(0, 2.4)
     ax.set_title('Pattern size change per lap\n(1 = holds its size)')
     ax.set_ylabel('× per lap')
@@ -314,7 +340,7 @@ def fig_summary(runs, out):
     for r in runs:
         for n, (i, v) in enumerate(r['drones'].items()):
             if v['tilt_meas'] is not None:
-                ax.plot(RUNG_X[r['label']] + (n - 0.5) * 0.7, np.nanmedian(v['tilt_meas']),
+                ax.plot(RUNG_X[r['label']] + (n - 0.5) * 0.17, np.nanmedian(v['tilt_meas']),
                         marker=DRONE_MARKER[i], color=RUNG_COLOUR[r['label']], ms=7, ls='none')
     ax.set_title('How far the real drones tilted\n(grey = what the pattern needs)')
     ax.set_ylabel('median tilt, degrees (VICON)')
@@ -330,8 +356,8 @@ def fig_summary(runs, out):
     taus = [v['lag'] for r in runs for v in r['drones'].values()]
     lo, hi = 4 * min(taus), 4 * max(taus)
     ax.axhspan(lo, hi, color=DESIGN, alpha=0.35, lw=0)
-    ax.text(3.8, lo - 0.04, f'grey band: 4 × the drones\' delay ({min(taus):.2f}–{max(taus):.2f} s)',
-            color=MUTED, fontsize=7.5, va='top')
+    ax.text(0.02, 0.55, f'grey band: 4 × the drones\' delay ({min(taus):.2f}–{max(taus):.2f} s)',
+            transform=ax.transAxes, color=MUTED, fontsize=7.5, va='top')
     _dots(ax, runs, 'shake_T')
     ax.set_title('Time for one shake\n(same at every speed)')
     ax.set_ylabel('s')
@@ -350,9 +376,11 @@ def fig_summary(runs, out):
          Line2D([], [], marker='s', color=MUTED, ls='none', ms=7),
          Line2D([], [], color=DESIGN, lw=3)]
     fig.legend(h, ['drone1', 'drone4', 'what the designed pattern needs (simulation)'],
-               loc='lower center', ncol=3, bbox_to_anchor=(0.5, -0.02))
-    fig.suptitle(f'Trochoidal, 15 Sep: three pattern speeds, max_accel {CLAMP}   '
-                 f'(x axis: typical speed the designed pattern asks for)',
+               loc='lower center', ncol=3, bbox_to_anchor=(0.5, -0.01))
+    fig.text(0.5, -0.048, 'designed pattern speed:   '
+             + '    '.join(f'{k} = {NAME[k]}' for k in RUNGS),
+             ha='center', color=MUTED, fontsize=8.5)
+    fig.suptitle(f'Trochoidal speed ladder, 15–16 Sep: max_accel {CLAMP} throughout',
                  x=0.01, ha='left', fontsize=12, fontweight='bold', color=INK)
     fig.tight_layout(rect=(0, 0.04, 1, 0.97))
     fig.savefig(os.path.join(out, '1_summary.png'))
@@ -375,7 +403,8 @@ def fig_size(runs, out):
     ax.set_ylim(0.5, 5)
     ax.set_xlabel('laps since the algorithm started')
     ax.set_ylabel('pattern size')
-    ax.legend(loc='upper right', title='designed pattern speed', title_fontsize=8)
+    ax.legend(loc='center left', bbox_to_anchor=(1.01, 0.5), fontsize=8.5,
+              title='designed pattern speed', title_fontsize=8.5)
     fig.suptitle('Pattern size over time (shake filtered out)', x=0.01, ha='left',
                  fontsize=12, fontweight='bold', color=INK)
     fig.tight_layout(rect=(0, 0, 1, 0.94))
@@ -586,6 +615,7 @@ def main():
             print(f'  {label}: no record -- left out' + (' (pass --r6 <file>)' if label == 'r6' else ''))
             continue
         runs.append(analyse(label, path, cfgname))
+    RUNGS.extend(r['label'] for r in runs)
     for r in runs:
         NAME[r['label']] = f"{np.median([v['speed_design'] for v in r['drones'].values()]):.2f} m/s"
     table(runs)
