@@ -78,7 +78,7 @@ robots:
   # The key name here must match the VICON Tracker rigid body exactly, and is
   # what cf_name/mocap_name are set to on the launch command line.
   drone_2:
-    enabled: true
+    enabled: false
     uri: radio://0/20/2M/E7E7E7E7E8
     initial_position: [0.179, 0.219, 0.0158]
     type: cf21
