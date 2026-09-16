@@ -112,7 +112,7 @@ Contingent — ours, fixable, so cause (1):
 |---|---|
 | 25 Hz control rate | Set by our ROS 2 stack, Python, and shared radio bandwidth. A C++ node and more radio budget would run faster. |
 | Velocity by differentiating VICON | A Kalman filter fusing VICON position with the onboard IMU would be far cleaner. We simply have not written one. |
-| `max_accel = 0.5` | Chosen for safety in a small flight volume. The airframe can do considerably more. |
+| `max_accel` (0.5; 3.5 for trochoidal since 15 Sep) | Chosen for safety in a small flight volume. The airframe can do considerably more. |
 | `max_lead` leash, geofence clamping | Our safety scaffolding. It distorts the control law whenever it engages, and it is entirely our choice. |
 
 Necessary — no hardware fixes it, so cause (3):
@@ -134,7 +134,8 @@ Two caveats worth stating precisely:
 - **Latency is not one thing.** Position *update* rate is contingent (VICON
   streams far faster than our 25 Hz loop, so the bottleneck is ours), while
   *actuation* delay is necessary. Same word, opposite verdicts — which is why it
-  must be decomposed rather than blamed as a lump.
+  must be decomposed rather than blamed as a lump. (Measured total, and a first
+  split: section 13e.)
 
 Downwash may matter to us specifically: we stagger the two real drones by 0.4 m
 in altitude for safety, so one can fly directly beneath the other. At that
@@ -155,6 +156,10 @@ control rate as measured; holding the pattern for 60 s therefore requires roughl
 X Hz, which exceeds what the Crazyradio link sustains across a four-drone
 fleet."* That tells the next person what hardware the algorithm needs, which is
 worth far more than "it did not work for us."
+
+Section 13g now has a result of exactly this form: a loop delay of ~0.28 s caps
+trochoidal's velocity gain at β ≈ 4–6, and so caps how fast this pattern can be
+flown.
 
 Note also that these two statements are not in tension — the second earns the
 first:
@@ -223,8 +228,10 @@ which algorithms care.
    and 10–20 Hz in the hybrid configs. *Hidden assumption: 25 Hz is close
    enough to continuous.*
 
-2. **Force is saturated.** `max_accel = 0.5` m/s^2 in every algorithm, plus a
-   velocity clamp and the `max_lead` leash in `crazyflie_node`. No stability
+2. **Force is saturated.** `max_accel` is 0.5 m/s^2 for coverage and flocking,
+   and 3.5 for trochoidal since 15 Sep (until then the launch never passed it
+   on, so every drone ran at 0.5 — 11h). On top of that, `crazyflie_node` caps
+   the target velocity at 0.7 m/s and applies the `max_lead` leash. No stability
    proof in any of these papers covers a saturated input. *Hidden assumption:
    we never hit the limits hard enough to matter.*
 
@@ -281,12 +288,16 @@ which algorithms care.
      `max_lead` leash exists because they can drift apart.
 
    *Hidden assumption: the tracking lag between virtual and real is negligible.*
+   **Measured 15 Sep: it is not.** The real drone accelerates ~0.23 s after the
+   command, ~0.28 s round the whole loop (13e).
 
    This is the simplification with the sharpest predicted split between
    algorithms. Trochoidal places eigenvalues *precisely* on the imaginary axis,
    and unmodelled loop lag moves them off it — so the trochoid should decay or
    spiral rather than close. Coverage drives to a fixed point, so lag only means
    arriving later at the same place. Same simplification, opposite consequences.
+   *Outcome (13c, 13g): the split happened, but not as decay. The lag drives
+   trochoidal's velocity brake into a ~1.1 s oscillation.*
 
 5. **Motion is planar and altitude is pinned.** All laws run in 2-D; z is held
    at the takeoff height. *Hidden assumption: the vertical loop does not
@@ -383,6 +394,11 @@ of section 5a.4 all nudge eigenvalues sideways.
 
 Writing that down *first* and then testing it is the shape of the whole report.
 
+**Outcome.** The ordering held: trochoidal degraded most, coverage least,
+flocking between. The mechanism did not. Under the 0.5 clamp the trochoid grew
+(11c); with the clamp lifted it roughly holds its size, but is swamped by a
+~1.1 s oscillation caused by the tracking lag (13c).
+
 ### 6a. One suspect already eliminated: control-loop discretisation
 
 An earlier version of this prediction also blamed discretisation at 25 Hz. That
@@ -424,8 +440,10 @@ concluding anything.**
 
 What survives: the remaining candidate mechanisms are the ones that are
 genuinely *delays* — velocity estimated by differentiating VICON, and the lag
-between the virtual double integrator and the real drone chasing it. Both remain
-plausible and untested. Discretisation is off the list.
+between the virtual double integrator and the real drone chasing it.
+Discretisation is off the list. The tracking lag has since been measured
+(~0.23 s, 13e) and accounts for the ~1.1 s oscillation (13c); the velocity
+estimate's ~45 ms is part of the same loop delay.
 
 ## 7. What to measure, per algorithm
 
@@ -465,6 +483,9 @@ Two things it computes that are worth knowing about:
   transform averages amplitude over the window. The tool measures tau first and
   corrects the radii back to the start of the analysis window, reporting both
   figures. Verified accurate to about 1% for realistic decay.
+- On hardware, do not quote the recorder's trochoidal summary (11c). Use
+  `tools/analyse_trochoidal.py` for one flight and `tools/plot_trochoidal_ladder.py`
+  for the speed ladder.
 
 ## 8. How to discuss the sim-to-real gap
 
@@ -495,6 +516,8 @@ rather than a rehearsal.
    plant model the real Crazyflie's behaviour actually matches. The firmware's
    inner loop means it is a heavily-damped second-order system, so neither
    idealisation is exactly right.
+   *Partly answered (13g): on the Crazyflie, the order of the integrator matters
+   less than the ~0.3 s lag in front of it.*
 2. **Coverage optimality on hardware vs simulation.** Final `H` in both, against
    the theoretical minimum. Must report `grid_res` alongside, since it moves the
    answer by ~19 mm at the default.
@@ -514,6 +537,9 @@ rather than a rehearsal.
    irreducible part (motor spin-up, aerodynamic response, radio time-of-flight)
    and our part (ROS 2 queueing, loop rate, Python). Only the irreducible part
    supports a claim against a paper.
+   *Total measured: ~0.23 s from command to acceleration, ~0.28 s round the
+   loop, the same in flocking and trochoidal (13e). The split there is an
+   estimate from the code's rates; the step test (12, item 4) measures it.*
 6. **Algorithm latency comparison.** Per-algorithm compute time per tick, and
    whether any of them threatens the 25 Hz budget. Coverage is the expensive one
    (`O(grid_res^2)` per cell per tick).
@@ -601,6 +627,10 @@ designed periods and zero growth exactly.
   asks for only ~0.3–0.7° of tilt; the grown hardware pattern asks for more.)
 - The recorder's own trochoidal summaries (period ratios of 5–47, "decay" time
   constants) are geofence and sub-cycle artefacts. Do not quote them.
+- **Update 15 Sep (section 13).** All four runs above flew with the 0.5 clamp
+  (11h). With the clamp at 3.5 the growth disappeared (×0.92–1.05 per lap), so
+  these growth rates belong to the clipped law. The rescale-14 tilt question is
+  answered in 13b: 22–32°, set by the ~1.1 s oscillation, not by the pattern.
 
 ### 11d. Flocking: the circling is flocking-specific
 
@@ -630,17 +660,19 @@ The candidate mechanism is a hypothesis, not a result:
 - Trochoidal couples only through positions; each agent uses its own velocity only.
 
 This is the supervisor's velocity-differentiation hypothesis, now with a
-specific path. Section 12 tests it.
+specific path. Section 12 (item 3) tests it. The fast shake in the table above
+is explained in section 13c; the slow circling is not (13f).
 
 ### 11e. A separate fast shake on the real drones
 
-This is a side issue.
+**Superseded.** Explained on 15 Sep, and now the main trochoidal finding: see
+section 13c. As first observed:
 - The ~1.2 s shake is 10–16× faster than trochoidal's own inner loop (12–19 s),
   so it is not the designed motion.
-- It is the same at r6 and r10, even though β, the velocity gain, rises 67%.
+- It was the same at r6 and r10, even though β, the velocity gain, rose 67%.
 - It is absent in hover, in settled coverage, and in the one clean segment of
   the 12 Aug square flight (explicit setpoints).
-- Cause unknown.
+- At the 0.5 clamp it was 3–4 cm. With the clamp at 3.5 it is 15–19 cm.
 
 ### 11f. Three drones and other failures
 
@@ -685,73 +717,86 @@ Found 2026-09-15, while preparing the next lab.
   and the growth rates in 11c are for the clipped law.
 - Fixed: the launch now passes the config's `max_accel` to both nodes
   (`max_acceleration:=config`, the default), and prints the clamp at startup.
-- Possibly relevant to 11e, unconfirmed: a saturated velocity loop can settle
-  into a limit cycle whose size is set by the clamp rather than the gain. That
-  would explain why the ~1.2 s shake did not change with β.
+- **Confirmed 15 Sep (13c):** a saturated velocity loop settles into a cycle
+  whose size is set by the clamp rather than the gain. Raising the clamp from
+  0.5 to 3.5 grew the ~1.2 s shake from 3–4 cm to 15–19 cm, while its period
+  stayed at 1.1–1.3 s and did not change with β.
 
 ## 12. Next lab plan
 
-Three things, in this order.
+*Rewritten after the 15 Sep flights; the findings behind it are in section 13.
+Items 1 and 2 of the previous plan (rescale 14 flown properly; tilt and
+laps-to-double) were done. Its item 3, the flocking velocity window, was not
+flown and is carried over as item 3 below.*
 
 ### Before every flight
 
-On the lab PC. The code changed as well as the configs, so copy the whole
-package, not only a yaml:
+On the lab PC:
 
 ```bash
 REPO=~/Desktop/multi-drone-testbed
 cd $REPO && git pull
 rsync -a $REPO/ros2_ws/src/drone_testbed/ ~/ros2_ws/src/drone_testbed/
 cd ~/ros2_ws && colcon build --packages-select drone_testbed && source install/setup.bash
-grep -E "^\s+(alpha|beta|kappa|max_accel):" ~/ros2_ws/install/drone_testbed/share/drone_testbed/config/testbed_fig4.yaml
+grep -E "^\s+(alpha|beta|kappa|max_accel|gain_\w+):" ~/ros2_ws/install/drone_testbed/share/drone_testbed/config/<the config you will fly>
 ```
 
-Then check three things:
-- The grep must show the rescale-14 gains: alpha 9.9259, beta 14.0, kappa
-  1.7815, max_accel 3.5.
-- Terminal 2 must print `acceleration clamp 3.5 m/s^2`.
-- The recorder now warns in capitals if the yaml it was given differs from the
-  installed one.
+- Terminal 2 must print the acceleration clamp you expect.
+- **Put the drones on their own marks:** VICON `drone_1` on (0.235, −0.132),
+  `drone_2` on (0.179, 0.219). All three 15 Sep flights had them swapped.
 
-### 1. Trochoidal: rescale 14, flown properly (×2)
+### 1. Trochoidal below the ceiling — the decisive test
+
+The same design, slower. Three configs, made 16 Sep and verified in simulation
+(designed periods to 0.1 s, zero growth), from
+`tools/design_consensus_gains.py --config config/testbed_fig4.yaml --theta 2.28488 --rescale N`:
+
+| Config | β | β × 0.28 s | Fast lap | Pattern speed | `flight_duration` |
+|---|---|---|---|---|---|
+| `testbed_fig4_r4.yaml` | 4 | 1.1 — the edge, about where flocking sits | 28.6 s | 0.05 m/s | 200.0 |
+| `testbed_fig4_r3.yaml` | 3 | 0.84 | 38.1 s | 0.04 m/s | 250.0 |
+| `testbed_fig4_r2.yaml` | 2 | 0.56 | 57.2 s | 0.03 m/s | 250.0 |
+
+`max_accel` stays 3.5, so only the speed differs across the whole ladder. The
+design itself needs only 0.04–0.17 m/s² here, so the clamp should never engage
+unless the oscillation comes back.
+
+**Fly r3 first** — it is clearly below the ceiling. Then r2 to confirm, then r4
+to find the edge. These are 3–4 minute flights, so use fresh batteries.
 
 ```bash
 # T2
-ros2 launch drone_testbed hardware_hybrid.launch.py config:=config/testbed_fig4.yaml \
-    hw_drone:=drone1,drone4 cf_name:=drone_1,drone_2 mocap_name:=drone_1,drone_2 flight_duration:=95.0
+ros2 launch drone_testbed hardware_hybrid.launch.py config:=config/testbed_fig4_r3.yaml \
+    hw_drone:=drone1,drone4 cf_name:=drone_1,drone_2 mocap_name:=drone_1,drone_2 flight_duration:=250.0
 # T3
 cd ~/Desktop/multi-drone-testbed && python3 tools/metrics_recorder.py \
-    --config ros2_ws/src/drone_testbed/config/testbed_fig4.yaml \
-    --hw drone1,drone4 --mocap-name drone_1,drone_2 --note "rescale 14"
+    --config ros2_ws/src/drone_testbed/config/testbed_fig4_r3.yaml \
+    --hw drone1,drone4 --mocap-name drone_1,drone_2 --note "rescale 3, clamp 3.5"
 ```
 
-This is also the first trochoidal flight with the clamp as designed (11h). If
-there is time, one rescale-10 flight (`config:=config/testbed_fig4_r10.yaml`,
-`flight_duration:=125.0`) gives the ladder a second clean rung.
+**Prediction.** The ~1.1 s oscillation disappears or shrinks to a few cm, tilt
+falls towards the design, and the pattern holds closer to its designed size. If
+it oscillates as at β = 6–14, section 13c is wrong.
 
-### 2. Trochoidal metrics: laps before doubling, and tilt
+**Afterwards:** add the record to `RUNS` in `tools/plot_trochoidal_ladder.py`
+and rerun it, which redraws every figure with the new rung included.
+
+### 2. Flocking with a weaker velocity gain
+
+`testbed_flocking_hybrid_c2a05.yaml` lowers the velocity-matching gain from 2.0
+to 0.5, which takes gain × delay from ~1.1 to ~0.5.
 
 ```bash
-python3 tools/analyse_trochoidal.py --config ros2_ws/src/drone_testbed/config/testbed_fig4.yaml logs/hw/<record>.txt
+ros2 launch drone_testbed hardware_hybrid.launch.py config:=config/testbed_flocking_hybrid_c2a05.yaml \
+    hw_drone:=drone1,drone2 cf_name:=drone_1,drone_2 mocap_name:=drone_1,drone_2 flight_duration:=90.0
+python3 tools/metrics_recorder.py --config ros2_ws/src/drone_testbed/config/testbed_flocking_hybrid_c2a05.yaml \
+    --hw drone1,drone2 --mocap-name drone_1,drone_2 --note "c2a 0.5"
 ```
 
-The tool reports, over the clean window only:
-- **Laps before the pattern doubles in size:** the growth rate of each mode,
-  turned into doubling time in seconds and in fast laps.
-- **Start to geofence**, in seconds.
-- **Tilt:** each real drone's median, p95 and max. It now comes from the VICON
-  orientation in a new recorder column, and the tool puts it next to the
-  point-mass prediction atan(|a|/g) from simulation.
-- **The gains that actually flew**, from replaying the virtual drones, so 11b
-  cannot happen unnoticed again.
+**Prediction.** The ~1.1 s oscillation shrinks. A second algorithm showing the
+same dependence on its velocity gain makes the mechanism general.
 
-Prediction:
-- About one lap to double, as at rescale 6 and 10, means the divergence still
-  scales with the pattern's own clock.
-- Fewer laps, with measured tilt running above the point-mass prediction,
-  means this is where the point-mass model breaks.
-
-### 3. Flocking: velocity window, and real pose timing
+### 3. Flocking: velocity window, and real pose timing (carried over)
 
 Same config each time. Change only the VICON velocity fit, 1–2 flights each:
 
@@ -777,3 +822,451 @@ circling:
 - window 20 (smoother but later) and window 5 (fresher but noisier) should
   both change it;
 - if the circling is the same at all three, differentiation is not the driver.
+
+### 4. Step test: measure the delay directly
+
+Hover, jump the target 20 cm, and time the response in VICON. This splits
+13e's delay into our stack and the vehicle. It needs a small script, which is
+not written yet.
+
+### 5. A simpler graph at the same β (optional)
+
+A two-drone or symmetric-ring trochoid at β = 10. **Config not made yet.** If it
+shows the same oscillation, the graph is ruled out as a cause (13h).
+
+### 6. Record the setpoint
+
+Add `crazyflie_node`'s `/<id>/setpoint` to the recorder, so figures 6–7 no longer
+rely on a rebuild. Not done yet.
+
+### 7. Lever 3 diagnostic (optional; supervisor first)
+
+Rescale 10 with the brake reading the target's velocity instead of the drone's
+(13i). This needs a code change: a launch switch, off by default. It has not
+been made. Agree it with the supervisor first, because it changes what the law
+is fed.
+
+## 13. Hardware findings, 15 September 2026
+
+*Three trochoidal flights at three speeds, the first with `max_accel` 3.5
+actually reaching the drones (11h fixed). Records in `logs/hw/`. Figures in
+`docs/figures/trochoidal_ladder/`, made by `tools/plot_trochoidal_ladder.py`,
+which also prints every number below. A fourth flight, rescale 10 at clamp 1.8
+(`trochoidalconsensus_20260915_144306`), hit the geofence repeatedly and is left
+out.*
+
+### 13a. What flew
+
+| | r6 | r10 | r14 |
+|---|---|---|---|
+| Record `trochoidalconsensus_…` | `20260915_151744` | `20260915_145550` | `20260915_143416` |
+| β, the velocity gain | 6 | 10 | 14 |
+| Speed the designed pattern asks of the real drones (median) | 0.06 m/s | 0.11 m/s | 0.15 m/s |
+| Designed fast lap | 19.0 s | 11.4 s | 8.2 s |
+| Gains that flew (replay, the 11b method) | the config's (0.3 cm) | config time scale ×0.98 | ×0.99 |
+
+For r10 and r14 the replay residual is 3–4 cm rather than under 1 cm, so
+`analyse_trochoidal.py` prints "NOT the config gains". But the best-fit time
+scale is within 2% of the config, whereas the 11b mis-deploy showed as ×0.72.
+These are the config gains; the larger residual is unexplained.
+
+**The start positions were swapped on all three flights.** VICON `drone_1`
+(agent drone1) sat on drone4's mark (0.18, 0.22), and `drone_2` (agent drone4) on
+drone1's (0.24, −0.13). Trochoidal's pattern size depends on where it starts, so
+every "designed" figure in this section is simulated from the real start
+positions. From there the designed pattern is 20–28% smaller than from the marks.
+The swap does not cause the oscillation (13c).
+
+### 13b. Results
+
+| | r6 | r10 | r14 |
+|---|---|---|---|
+| Pattern size change per fast lap | ×1.05 | ×0.92 | ×0.94 |
+| A drone reached the 1.3 m edge | once, at 129 s; the flight carried on | never (124 s) | never (97 s) |
+| Pattern size vs design (fast loops filtered out) | 2.4× | 3.2× | 1.9× |
+| Real-drone speed, median (design) | 0.83–0.90 m/s (0.06) | 0.75–1.05 (0.11) | 0.82–0.90 (0.15) |
+| Tilt, median, from VICON (design, p95) | 24–27° (0.1°) | 22–32° (0.4°) | 24–28° (0.7°) |
+| ~1.1 s oscillation: RMS size / period | 17 cm / 1.16–1.28 s | 15–19 cm / 1.11–1.22 s | 15–16 cm / 1.11–1.16 s |
+| Command clipped at 3.5 m/s² | 79–92% of ticks | 89–94% | 89–92% |
+
+- **Raising the clamp stopped the divergence.** At 0.5 the pattern grew 1.4–1.9×
+  per lap and reached the geofence in 29–73 s (11c). At 3.5 it roughly holds its
+  size. The growth in 11c belonged to the clipped law.
+- **No speed flies the design.** At every speed:
+  - the real drones move 6–15× faster than the pattern asks;
+  - they tilt 20–30° where the pattern needs under 1°;
+  - the pattern is 2–3× its designed size, and drifts 2–5× slower than designed.
+    The mode fit gives periods 2–5× the design's, at R² 0.73–0.88, so the motion
+    is no longer a clean two-mode trochoid.
+- **Speed made almost no difference.** Every row is flat across the ladder. 13d
+  explains why.
+- **The tilt is exactly what the flown path needs.** Tilt computed from the path,
+  atan(|a|/g), matches VICON's tilt to within 1–2° (figure 5). The drones are not
+  tilting erratically. They are flying a far more violent path than the design.
+  This also validates that estimate for records before 15 Sep, which have no tilt
+  column.
+
+### 13c. The ~1.1 s oscillation: what it is
+
+This is the "fast shake" of 11e.
+
+**The drone follows its commanded position well; the commanded position itself
+oscillates.** Figures 6–7 rebuild the setpoint `crazyflie_node` streamed, using
+the node's own steps. The drone traces the same loops ~0.3 s behind, 10–13 cm off
+once that lag is allowed for. The loops are in the command. The drone does not
+add them. (The setpoint is not recorded; 12, item 6.)
+
+**Mechanism.** This is the best explanation of every observation so far. It has
+not yet been tested by a flight designed to break it.
+
+- Trochoidal's command contains a velocity brake, −β·v. It asks the drone to
+  cancel its velocity within 1/β = 0.07–0.17 s.
+- The drone takes ~0.3 s to respond (13e).
+- So the brake always acts on out-of-date motion: it brakes too late, the drone
+  overshoots, the brake reverses, and the cycle repeats.
+- For a brake with a pure delay τ, the textbook result is that v′ = −k·v(t−τ) is
+  stable only if k·τ < π/2 ≈ 1.57, and at that limit it oscillates with period
+  4τ.
+- Past the limit, the oscillation grows until the acceleration clamp stops it.
+  Its **size is set by the clamp and its period by the delay — neither by β.**
+
+| This predicts | Measured |
+|---|---|
+| Period ≈ 4 × delay ≈ 1.1–1.2 s | 1.1–1.3 s on every run (figure 4) |
+| The same at every β once past the limit | identical at β 6, 10 and 14 |
+| Size scales with the clamp | clamp 0.5: 3.4–3.7 cm; clamp 3.5: 15–19 cm |
+| Absent without delay | the virtual drones — same law, same flights — do not oscillate |
+| A self-sustained cycle, not noise | one sharp spectral peak (figure 3); sensor noise × β would spread across all frequencies |
+| Absent without a velocity brake | the 12 Aug square flight (explicit position setpoints) |
+| Absent with a weak brake | coverage (13f) |
+
+**The mechanism, step by step.** This is an illustration with round numbers,
+not flight data. Setup:
+- The drone and its target are both moving at +0.2 m/s.
+- Only the brake acts, so it aims for 0 m/s.
+- β = 10, worked in 0.1 s steps.
+- The drone copies the target's speed from 0.3 s earlier.
+
+| Time | Target's speed | Drone's speed (target's, 0.3 s earlier) | Brake reads the drone, pushes the target by |
+|---|---|---|---|
+| 0.0 s | +0.2 | +0.2 | −0.2 |
+| 0.1 s | 0.0 (job done) | +0.2 | −0.2 (pushes again) |
+| 0.2 s | −0.2 | +0.2 | −0.2 |
+| 0.3 s | −0.4 | +0.2 | −0.2 |
+| 0.4 s | −0.6 | 0.0 | 0 |
+| 0.5 s | −0.6 | −0.2 (now going backwards) | +0.2 |
+| 0.6 s | −0.4 | −0.4 | +0.4 |
+| 0.7 s | 0.0 | −0.6 | +0.6 |
+| 0.8 s | +0.6 | −0.6 | +0.6 |
+| 0.9 s | +1.2 | −0.4 | +0.4 |
+| 1.0 s | +1.6 | 0.0 | 0 |
+
+What happens:
+- At 0.1 s the target has already stopped. The drone still shows the old +0.2,
+  so the brake keeps pushing for three more steps.
+- The target reaches −0.6, and the drone copies it and flies backwards.
+- The next swing is larger (+1.6). Each swing is bigger than the last until
+  the 3.5 m/s² clamp caps them.
+- In x and y together, this back-and-forth is the circles.
+
+It does not matter where along the loop the 0.3 s sits. Part of it is the drone
+responding (~0.23 s) and part is the reading being old (~0.05 s). What counts is
+the time from a push to the brake seeing its effect.
+
+**Gain × delay, in plain terms.** The brake removes a fraction β of the speed
+per second. So during one delay, before it can see the result, it removes a
+fraction β·τ.
+- Below about 1, it has not finished when it catches up with reality, so the
+  motion settles.
+- Above about 1, it has already overdone it, so the drone overshoots.
+- Above about 1.5, each swing is bigger than the last.
+
+The fraction does not depend on speed, so a 1 cm/s disturbance grows as readily
+as a 1 m/s one. Speed matters only once the command hits the clamp. At β = 14
+that happens at 0.25 m/s, and from then on the swings stop growing. That is why
+the clamp sets the size of the circles.
+
+**Why the brake term dominates the command.** Rebuilt from the logs, the brake
+term was 5–14 m/s², against 0.5–6 for the centring and coupling terms.
+- The brake is the only term that scales with speed. The circles make the real
+  drones move at 0.8–1 m/s, against a designed 0.06–0.15.
+- In the design the brake would be 0.4–2 m/s², the same size as the other two
+  terms, which balance it.
+- So it is circular: the brake is large because the drones move fast, and they
+  move fast because the late brake overshoots.
+- The design also makes the brake strong relative to the rest: β² ≈ 19.75·α on
+  every rung, because the time rescale keeps that ratio fixed.
+
+### 13d. Why going faster did not make it worse
+
+In this ladder β rises with speed, because the time rescale multiplies β by the
+speed-up. So faster patterns sit further past the limit:
+
+| | r6 | r10 | r14 |
+|---|---|---|---|
+| β·τ | 1.4–1.8 | 2.2–3.0 | 3.1–4.2 |
+
+But past the limit the symptom saturates at the clamp. The ladder therefore did
+not test "more speed, more error". It tested three points on the far side of a
+threshold. The flights that test the explanation are ones below it (12, item 1).
+
+The threshold is fuzzier than the pure-delay formula:
+- Flocking, at k·τ ≈ 1.0–1.2, also oscillates at ~1.1 s (13f).
+- A real drone's response is not a pure delay.
+
+Expect trouble from roughly k·τ ≈ 1. On this stack that puts the ceiling at
+**β ≈ 4–6**. So **this trochoidal design cannot be flown faster than about
+0.04–0.06 m/s** without the oscillation.
+
+### 13e. The delay: what is late, and why
+
+The delay is measured by cross-correlating two things for each real drone:
+- the command it was sent, which is the control law replayed on the logged
+  states;
+- the acceleration it achieved, from VICON.
+
+Results:
+- **≈ 0.23 s** (0.22–0.26) from the command to the drone accelerating. This uses
+  the command rebuilt with the ~50 ms-late velocity the controller actually used.
+- **≈ 0.28 s** (0.26–0.31) with the command rebuilt from the true velocity. The
+  difference is the velocity estimate's own lag.
+- **The same in flocking (0.23–0.26 s) and trochoidal (0.22–0.25 s).** The delay
+  belongs to the hardware chain, not to either algorithm.
+
+Where it builds up. The rates come from the code; the split is an estimate, not a
+measurement:
+
+| Stage | Adds | Section 4 verdict |
+|---|---|---|
+| `mocap_state_node` velocity fit (10 samples at 100 Hz) | ~45 ms | contingent |
+| `algorithm_manager` at 10 Hz (waiting for the next tick, then holding) | ~50 ms on average | contingent |
+| `crazyflie_node` at 25 Hz | ~20 ms | contingent |
+| ROS 2 messaging, radio | ~10 ms | contingent |
+| Onboard: the Mellinger controller chasing a moving target, which must tilt before it can accelerate | the rest, ~0.15 s | mostly necessary (tilt-to-translate); to be measured |
+
+Roughly half the loop delay is our stack and half is the vehicle. The step test
+(12, item 4) splits it properly.
+
+**Is 0.23 s slow?** Yes, for a Crazyflie, which can tilt in well under 0.1 s. On
+the estimate above:
+- ~0.08 s is our pipeline, before the drone even has the command. The 10 Hz
+  algorithm tick is the largest piece.
+- ~0.15 s is the onboard controller and tilting.
+
+**Why velocity comes from the last 10 positions.** VICON measures position only,
+so velocity has to be derived, and there is a trade-off:
+- Differencing the two newest samples (0.01 s apart) turns ~1 mm of VICON jitter
+  into ~0.1 m/s of false speed. At β = 14 that is ±1.4 m/s² of random braking.
+- A line through the last 10 samples is far smoother, but it describes the
+  middle of the window, ~45 ms ago.
+
+Fresh-and-noisy against smooth-and-late is the `velocity_window` knob (12, item
+3). Better options exist:
+- a Kalman filter on the ROS side;
+- the drone's onboard estimate, which fuses VICON with the IMU. Sending it back
+  over the radio costs its own delay and bandwidth.
+
+The usual Crazyswarm arrangement runs the fast feedback onboard, using that
+estimate, and sends only targets from the PC. Running a fast velocity loop
+through ROS, as the testbed does, is the less usual part. The velocity estimate
+is about a sixth of the loop delay, so fixing it alone does not remove the
+problem.
+
+### 13f. Across algorithms: same delay, and the oscillation follows the velocity gain
+
+| Algorithm (flights) | Gain on each drone's own velocity | Gain × delay | ~1.1 s oscillation, real drones |
+|---|---|---|---|
+| Coverage (2 Sep ×4, clamp 0.5) | k_d = 1.2 | ≈ 0.3 | 0.3–1.5 cm (one run 2.6 cm)* |
+| Flocking (8 Sep tests 2 and 4, clamp 0.5) | c2γ + c2α·Σ bump weights ≈ 4.5–4.7 | 1.0–1.2 | 2.5–4.0 cm, period 1.0–1.3 s |
+| Trochoidal r6, r10 (8–9 Sep, clamp 0.5) | β = 6, 10 | 1.4–2.4 | 3.4–3.7 cm, 1.15–1.17 s |
+| Trochoidal r6–r14 (15 Sep, clamp 3.5) | β = 6, 10, 14 | 1.4–3.2 | 15–19 cm, 1.11–1.26 s |
+
+Gain × delay uses the 0.22–0.26 s command-to-acceleration delay.
+
+\*The 2 Sep coverage records hold only each drone's distance to its Voronoi
+centroid, not its position. A circle centred on the centroid would not show in
+that distance, so this row is weaker evidence than the others. It agrees with
+what was seen in the room.
+
+- The algorithm with a gentle brake, coverage, does not oscillate. The two with
+  strong velocity gains do, at the same ~1.1 s period and with the same measured
+  delay.
+- **Flocking's visible "mini circles" are mostly a different motion.** The 2–6 s
+  circling of 11d (2–10 cm here) differs from the ~1.1 s oscillation in two ways:
+  - it is slower than 4× the delay;
+  - it reaches the virtual drones, which the ~1.1 s oscillation does not.
+
+  It fits flocking's velocity-*matching* term, which carries the real drones'
+  late, noisy velocity to every neighbour (11d). That is related (velocity
+  feedback plus delay) but a separate path, and it is still a hypothesis. The
+  velocity-window test (12, item 3) targets it.
+
+### 13g. What this says about the simplification
+
+The paper and our simulation treat each agent as an **ideal double integrator**:
+the commanded acceleration happens instantly (sections 5a.4 and 5a.6). The
+Crazyflie behaves like a double integrator **plus ~0.3 s of lag**, through the
+chain in 13e.
+- For coverage that lag is harmless: 5a.4 predicted "arriving later at the same
+  place".
+- For trochoidal it is decisive. The design needs a strong velocity brake, and a
+  strong brake cannot tolerate delay.
+
+This is the section 4 form of a result:
+- **The general claim.** Trochoidal consensus assumes zero actuation delay. With
+  a loop delay τ, its velocity gain must stay below roughly π/(2τ), which caps
+  how fast a pattern can be flown.
+- **The local measurement.** Here τ ≈ 0.28 s, about half of it our stack. The
+  ceiling is β ≈ 4–6, which means patterns slower than ~0.04–0.06 m/s for this
+  design.
+- **The prediction in section 6 was half right.** Trochoidal did degrade most and
+  coverage least. But the lag did not make the trochoid decay or spiral. It
+  produced a separate fast oscillation that swamps the pattern.
+
+### 13h. The supervisor's concern, and the graph
+
+**The "black box" of sending position, velocity and acceleration is where the
+delay lives.**
+- `crazyflie_node` turns the acceleration into a moving target, and the onboard
+  controller chases that target ~0.3 s behind.
+- The box also contains limits the simulation does not have:
+  - a 0.7 m/s cap on the target's velocity, while the drones actually flew at
+    0.75–1.05 m/s;
+  - the 0.3 m leash, engaged on 7–16% of ticks.
+- The supervisor's suspicion and the mechanism in 13c are the same thing, seen
+  from two ends.
+
+**The complex graph is probably not the direct cause.**
+- The oscillation comes from each drone's own brake, which involves no neighbour.
+  In the logs the brake term was 5–14 m/s², and the graph coupling 0.5–6.
+- The graph may matter indirectly, if this graph and rotation angle force a
+  larger β for a given pattern speed than a simpler design would.
+- A simpler graph at the same β separates the two (12, item 5).
+
+### 13i. How it could be fixed
+
+There are four levers. The project aim (sections 1–2) is to explain the
+oscillation, not to tune it away, so the main result needs none of them. They
+matter for what the report says the hardware would need.
+
+1. **Lower the velocity gain.**
+   - *Flocking:* lower c2α (the `c2a05` config) or c2γ. Olfati-Saber's
+     guarantees hold for any positive gains; the flock just matches velocities
+     more slowly.
+   - *Trochoidal:* β is not a free dial. For a fixed graph and rotation angle,
+     the eigenvalue design ties β to the pattern speed (the time rescale keeps
+     β²/α fixed). So lowering β means a slower pattern: β = 3 gives ~0.03 m/s and
+     a 38 s lap. Another graph or angle might need less β for the same speed;
+     `tools/design_consensus_gains.py` can check.
+2. **Cut our share of the delay.** Run the algorithm at 25–50 Hz instead of 10,
+   and use a better velocity estimate. The law is unchanged and still fed the
+   drone's measured velocity, so this is a harness fix.
+   - Realistically, the delay drops from ~0.28 s to ~0.22 s, which moves the
+     ceiling from β ≈ 4–6 to ≈ 5–7.
+   - Removing all of our share (leaving ~0.15 s) would give β ≈ 7–10.
+3. **Take the delay out of the brake ("lever 3").** Explained below.
+4. **Delay compensation.** Predict the velocity ~0.3 s ahead from a model. This
+   is more complex, and only a partial fix.
+
+**Lever 3 in detail.** For each real drone there are two things:
+- The **moving target** exists only in `crazyflie_node`, as `_desired_pos` and
+  `_desired_vel`, updated every 1/25 s from the command. It is the black line in
+  figures 6–7.
+- The **drone** chases the target ~0.3 s behind.
+
+"Pushing the target" means only changing those two stored numbers. The
+algorithm never pushes the drone directly, either today or under lever 3. Lever
+3 changes only which velocity the brake reads:
+
+| Term | Now reads | Lever 3 reads | "Replay the simulation" |
+|---|---|---|---|
+| −α × position (pull to centre) | real drone position | real drone position | target position |
+| −β × velocity (brake) | real drone velocity, ~0.3 s late | target velocity (exact, instant) | target velocity |
+| −κ × gaps to neighbours (coupling) | real drone positions | real drone positions | target positions |
+
+Under lever 3 the brake reads and changes the same number, so it never acts on
+old information. In the worked example of 13c, the target stops at 0.1 s, the
+brake sees that at once and stops pushing, and the drone stops 0.3 s later with
+no overshoot. The virtual drones already work this way, which is why they fly
+the design.
+
+**What it costs.**
+- The brake no longer sees the real drone's speed. If a drone lags, gets
+  knocked, or cannot keep up, the brake does not know.
+- The law is no longer fed the true state the paper assumes.
+
+**What it is not.** It is not the right-hand column:
+- Real positions still feed back, through the centring and coupling terms and
+  the leash. So the target does not simply replay the simulation.
+- It would also leave the position terms' ~0.3 s lag visible without the fast
+  circles on top. That is the slow growth or decay section 6 originally
+  predicted.
+
+**Status.** Lever 3 is an adaptation of the law (section 4, category (c)), not a
+harness fix. It is legitimate in two roles:
+- as a diagnostic: the same gains, with the delay removed from the brake. If the
+  circles vanish, the mechanism is shown.
+- as a clearly labelled remedy.
+
+It should not become "the algorithm works on hardware". To be discussed with the
+supervisor before any code is written. Not implemented.
+
+### 13j. What is measured, and what is inferred
+
+**Measured in the logs:**
+- the ~1.1–1.3 s oscillation: 15–19 cm at clamp 3.5, and 3–4 cm at 0.5;
+- the drones' acceleration following the command 0.22–0.26 s later (correlation
+  0.9–0.97);
+- period ≈ 4 × that delay, with both sides measured independently;
+- the virtual drones, which do not oscillate;
+- the brake term dominating the command;
+- the oscillation following the velocity gain across algorithms (the coverage
+  evidence is weaker).
+
+**Reconstructed or inferred:**
+- The commands and setpoints are not logged. They are rebuilt from 10 Hz
+  positions, so the play-by-play of 13c cannot be seen directly.
+- The k·τ < π/2 rule is for a pure delay and only approximate for a real drone.
+  Treat the delay as ±0.03 s.
+- Other contributors inside the black box are not excluded. Examples: the
+  0.7 m/s cap on the target velocity, and the 0.3 m leash.
+- No flight has yet been designed to break the explanation.
+- The recorder's own trochoidal summary is still not quotable (11c).
+
+**To turn it into a known result:**
+1. Fly trochoidal at β = 2–3 (12, item 1). If it oscillates as at β = 6–14, 13c
+   is wrong.
+2. Log the commands and setpoints (12, item 6).
+3. Run a simulation check (it can be done now; not done yet): the same law with
+   ~0.25 s of delay and the clamp added. If it reproduces a ~1.1 s loop of
+   15–19 cm at all three rungs, and 3–4 cm at clamp 0.5, the explanation is much
+   stronger. It would not be proof.
+
+### 13k. How to write it up
+
+The main result, with the law unmodified and fed the measured velocity:
+
+> Each algorithm's gain on a drone's own velocity, multiplied by the measured
+> loop delay (~0.28 s), predicts the ~1.1 s oscillation. Coverage ≈ 0.3: none.
+> Flocking ≈ 1.1: small. Trochoidal 1.5–3.5: large. Trochoidal's design ties β to
+> pattern speed, so the delay caps this design at about 0.04–0.06 m/s. About
+> half the delay is our software (reducible) and half the vehicle (not).
+
+Then, once flown, add the β = 2–3 and `c2a05` confirmations. If lever 3 is used,
+present it as a diagnostic and as a labelled adaptation with its cost stated,
+never as the published algorithm working on hardware.
+
+### 13l. Figures
+
+In `docs/figures/trochoidal_ladder/`; regenerate with
+`python3 tools/plot_trochoidal_ladder.py`.
+
+| File | Shows |
+|---|---|
+| `1_summary.png` | every metric against speed |
+| `2_pattern_size.png` | pattern size over time, in laps |
+| `3_shake.png` | the oscillation seen from above, and its single spectral peak |
+| `4_delay.png` | the ~0.3 s delay, and period = 4 × delay |
+| `5_tilt.png` | VICON tilt against the tilt the flown path needs |
+| `6_`, `7_commanded_vs_actual` | the drone against its (rebuilt) setpoint, at the start and mid-flight |
+| `8_`, `9_design_vs_actual` | the drone against the designed pattern, at the start and mid-flight |

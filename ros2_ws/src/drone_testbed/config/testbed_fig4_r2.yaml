@@ -1,0 +1,71 @@
+# VARIANT of testbed_fig4.yaml: rescale 2, BELOW the delay ceiling
+# (docs/PROJECT_AIM.md section 12 item 1). Identical except the gains. Every
+# comment in testbed_fig4.yaml applies -- read it before flying.
+#
+# WHY THIS EXISTS. Every 15 Sep flight (rescale 6, 10, 14) oscillated at ~1.1 s
+# with 15-19 cm circles and 22-32 deg of tilt (section 13). The explanation is
+# that trochoidal's velocity brake, -beta*v, acts on a velocity that is ~0.28 s
+# old, so it overshoots: trouble starts once beta x delay is around 1, i.e.
+# beta above roughly 4-6 on this stack.
+#
+#   beta x delay here: 2 x 0.28 = 0.56
+#
+# PREDICTION. The ~1.1 s oscillation disappears or shrinks to a few cm, tilt
+# falls towards the design's, and the pattern holds near its designed size. If
+# it oscillates like rescale 6-14 did, section 13c is WRONG -- which is the
+# point of flying it.
+#
+# Design numbers, reproduced in simulation to 0.1 s with zero growth
+# (tools/design_consensus_gains.py --config config/testbed_fig4.yaml
+#  --theta 2.28488 --rescale 2):
+#   periods 190.4 s and 57.2 s, peak speed 0.027 m/s, peak accel 0.043 m/s^2,
+#   envelope 0.394 m (the pattern's size barely changes with the rescale).
+#   flight_duration:=250.0  -- battery-limited, so this is fewer slow periods
+#   than the slower rungs get; the oscillation shows up within seconds, so a
+#   couple of fast laps is enough to answer the question.
+#
+# max_accel stays 3.5, the same as rescale 6, 10 and 14, so the whole ladder
+# shares one clamp and only the speed differs. The design itself only needs
+# 0.043 m/s^2 here, so the clamp should never engage unless the oscillation
+# comes back.
+
+simulation:
+  dt: 0.1
+  control_rate: 10.0
+  sim_rate: 10.0
+  bounds: 1.5
+
+drones:
+  # Same marks as testbed_fig4.yaml. Fly drone1 and drone4 as the real pair --
+  # see SEPARATION in that file. Put VICON drone_1 on drone1's mark and drone_2
+  # on drone4's: on 15 Sep the two were swapped (section 13a).
+  - id: "drone1"
+    initial_position: [0.235, -0.132]
+    initial_velocity: [0.0, 0.0]
+    role: "leader"
+  - id: "drone2"
+    initial_position: [0.013, 0.070]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone3"
+    initial_position: [-0.186, -0.034]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone4"
+    initial_position: [0.179, 0.219]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+
+algorithm:
+  name: "TrochoidalConsensus"
+  params:
+    alpha: 0.2026
+    beta:  2.0000
+    kappa: 0.0364
+    theta: 2.2849
+    max_accel: 3.5
+    adjacency:
+      drone1: {drone3: 5.0}
+      drone2: {drone1: 3.0, drone3: 1.0}
+      drone3: {drone1: 1.0, drone4: 2.0}
+      drone4: {drone1: 1.0, drone2: 5.0}
