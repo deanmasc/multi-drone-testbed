@@ -1084,6 +1084,11 @@ problem.
 
 Gain × delay uses the 0.22–0.26 s command-to-acceleration delay.
 
+**Superseded in part by section 15f**, which adds the coverage and
+flocking ladders of 16 Sep and brackets the threshold between k·τ = 0.67
+and 1.01. The claim below that coverage "does not oscillate" holds only
+at its original gains: at k_d = 3.6 (k·τ = 1.01) it oscillates at 23 cm.
+
 \*The 2 Sep coverage records hold only each drone's distance to its Voronoi
 centroid, not its position. A circle centred on the centroid would not show in
 that distance, so this row is weaker evidence than the others. It agrees with
@@ -1400,6 +1405,298 @@ otherwise throw away most of a good flight.
    the threshold.
 2. **Upload the `_timing.npz`** with the next record, so the r3 bursts can be
    tested against the tracking dropouts.
-3. Flocking `c2a05` (12, item 2) remains the second-algorithm test.
+3. ~~Flocking `c2a05` (12, item 2) remains the second-algorithm test.~~
+   *Done differently on 16 Sep: the second-algorithm test was run as a
+   time rescale (flocking s2) rather than a lone gain change, and
+   coverage was added as a third. See section 15.*
 4. Optional, once the ladder is done: lever 3 (12, item 7), with the supervisor's
    agreement.
+
+## 15. Hardware findings, 16 September 2026: the coverage and flocking ladders
+
+*Flown 16 Sep, after the trochoidal rungs of section 14; analysed 20–21 Sep.
+This is the section that carries the delay result from one algorithm to three —
+including the first deliberate attempt to make a quiet algorithm oscillate.*
+
+### 15a. What flew
+
+Five records, each **one real drone** (VICON `drone_1` = agent `drone1`) flying
+with three simulated agents in the same flight. That layout matters: the
+simulated agents obey the same law through the same ROS graph but have no radio,
+no motors and no airframe, so every flight carries its own delay-free control
+group. `max_accel` 3.5 on every run.
+
+| Rung | Config | Record | Gains | k = own-velocity gain | k·τ (τ = 0.28 s) |
+|---|---|---|---|---|---|
+| c1 | `testbed_coverage_c1.yaml` | `coverage_20260916_161129` | kp 1.0, kd 1.2 | 1.20 | 0.34 |
+| c2 | `testbed_coverage_c2.yaml` | `coverage_20260916_161409` | kp 4.0, kd 2.4 | 2.40 | 0.67 |
+| c3 | `testbed_coverage_c3.yaml` | `coverage_20260916_161948` | kp 9.0, kd 3.6 | 3.60 | 1.01 |
+| s2 | `testbed_flocking_hybrid_s2.yaml` | `flocking_20260916_165223` | c2α 1.0, c2γ 0.7 | 2.06–2.34 | 0.58–0.66 |
+| s1 | `testbed_flocking_hybrid.yaml` | `flocking_20260916_164800` | c2α 2.0, c2γ 1.4 | 4.12–4.75 | 1.15–1.33 |
+
+Every table and figure below is ordered the same way: **closest to what
+the theory asks for first, furthest away last** — that is, ascending k·τ.
+The rung names cannot carry that order themselves (coverage counts up
+with speed, flocking counts down), so the figures label each rung by its
+k·τ and put the name in brackets underneath.
+
+Rung names are the rescale factor: **s1 is the unrescaled law** (c = 1), s2 is
+half speed, s3 a third — s1 is *not* a reference run, since every rung is scored
+against simulation of its own config. Coverage's c1/c2/c3 run the other way,
+c1 being the slowest.
+
+Both ladders are **time rescales**, not detunes: position-type gains ×c²,
+velocity-type gains ×c, and the moving reference ×c. The trajectory and the
+settled geometry are unchanged — verified in simulation to under 2 cm — so the
+only thing that moves is k, and therefore k·τ. Coverage needed a *moving*
+hotspot (0.3 rad/s on a 0.6 m orbit) to have anything to track, because plain
+coverage settles in 1–5 s and then sits still.
+
+A sixth run, flocking `s3` (k·τ ≈ 0.4), was flown but **its upload never
+completed**; the Drive folder is empty. It remains the missing quiet end of the
+flocking ladder.
+
+### 15b. Coverage: the quiet algorithm made to ring
+
+| | c1 (k·τ 0.34) | c2 (k·τ 0.67) | c3 (k·τ 1.01) |
+|---|---|---|---|
+| Wobble RMS, real drone | 0.46 cm | 1.94 cm | **23.32 cm** |
+| Own (fleet-common removed) | 0.35 cm | 1.46 cm | 17.82 cm |
+| Ripple period | — | — | **1.16 s** |
+| Measured τ, real drone | 0.35 s* | 0.27 s* | 0.25 s |
+| Command clipped | 0% | 0% | **79%** |
+| Median tilt demanded | 0.6° | 1.2° | **33.2°** |
+| Median speed | 0.14 m/s | 0.16 m/s | **1.25 m/s** |
+| Peak speed | 0.25 m/s | 0.83 m/s | 1.54 m/s |
+| Coverage cost H vs simulation | **−3.2%** | **−1.9%** | **+14.5%** |
+| Median distance from the designed position | 8 cm | 6 cm | **89 cm** |
+| Wobble, the three simulated agents | 0.01–0.02 cm | 0.06–0.16 cm | 2.54–3.18 cm |
+| Fleet-common ripple | 0.12 cm | 0.48 cm | 5.59 cm |
+
+\* τ at c1 and c2 is not meaningful: with no wobble there is nothing for the
+cross-correlation to time, and the peak correlation is only 0.19 and 0.38. At c3
+it is 0.96. A delay is only measurable when something is happening.
+
+Read as a ladder:
+
+- **Below k·τ ≈ 0.7 coverage is as good as its own simulation** — H lands
+  within 2–3% of the simulated value, and the hardware is *slightly better* than
+  sim at both rungs, which is what a converged run in a slightly different basin
+  looks like. Nothing oscillates; nothing clips.
+- **At k·τ = 1.01 it breaks, hard.** 23 cm of wobble at 1.16 s, with a measured
+  τ of 0.25 s — 4τ = 1.00 s. The drone spends 79% of ticks at the acceleration
+  clamp, demands 33° of bank where c1 asked for 0.6°, and flies at 1.25 m/s
+  where the law wanted ~0.2.
+- **The cost degrades only at the rung that oscillates** (+14.5%), and the
+  degradation is small compared to the motion: the fleet keeps covering the
+  region *because* the oscillation is roughly symmetric about where the drone
+  should be. H is an integral, and an integral forgives a wobble.
+- **It leaks into the agents that have no hardware.** The three simulated drones
+  pick up 2.5–3.2 cm of ripple at the same period, with a 5.6 cm fleet-common
+  component. Voronoi neighbours are coupled through position, so one oscillating
+  agent moves everyone's cell boundary. This is the coverage analogue of what
+  11d guessed at for flocking, and here it is unambiguous, because those three
+  agents are integrated by `drone_node` with no physical layer at all.
+
+This is the first time the project has **produced** the failure rather than
+found it. Coverage was the robust control condition; pushing it to k·τ ≈ 1 made
+it fail in exactly the way the delay model says it should.
+
+### 15c. Flocking: the rescale closes the gap to simulation
+
+| | s2 (k·τ 0.64) | s1 (k·τ 1.32) |
+|---|---|---|
+| Wobble RMS, real drone | **0.77 cm** | 2.88 cm |
+| Own (fleet-common removed) | 0.62 cm | 2.57 cm |
+| Ripple period | 1.22 s | 1.16 s |
+| Measured τ, real drone | 0.33 s (corr 0.80) | 0.31 s (corr 0.90) |
+| Command clipped | **0%** | **83%** |
+| Median tilt demanded | 0.8° | 4.6° |
+| Median speed | 0.08 m/s | 0.20 m/s |
+| Lattice error vs simulation | **−1.2%** | **+40.8%** |
+| Median distance from the designed position | **12 cm** | 21 cm |
+| Wobble, simulated agents | 0.06–0.13 cm | 0.84–0.96 cm |
+| Fleet-common ripple | 0.16 cm | 0.69 cm |
+
+- **At s2 the sim-to-hardware gap does not shrink, it closes.** The settled
+  lattice error is within 1.2% of simulation of the same file, the command never
+  clips, and the wobble drops 3.7×. The flock is the same flock — same spacing,
+  same diamond, same 0.6 m orbit — flown on a clock half as fast.
+- **s1 is the same flight the 8 Sep runs were**, reproduced: 2.88 cm
+  against 2.5–4.0 cm then, at 1.16 s against 1.0–1.3 s then, with 83% clipping.
+  Two weeks and a different number of real drones later, the same k·τ gives the
+  same behaviour.
+- **The 41% lattice-error gap at s1 is the cost of the oscillation**, and
+  it disappears with it. That is the cleanest statement of the trade the whole
+  project is about: *speed bought at the price of the property the theorem
+  promises, with the exchange rate set by k·τ.*
+
+### 15d. A defect in the recorder's coverage cost column
+
+**The `H` column of the 16 Sep coverage records is wrong as logged, and the
+correction is large.** `CoverageMetrics.row()` integrates the density at the time
+it is handed, and `metrics_recorder.py` hands it *its own* elapsed time, which
+starts when the recorder is launched. The algorithm's hotspot clock starts when
+the algorithm starts — about 12.5 s later, after takeoff. At 0.3 rad/s that is
+~3.8 rad, so the logged H scores the fleet against a hotspot most of an orbit
+away from the one the drones are chasing.
+
+Scanning the offset confirms it: mean H is minimised at 14 s for both c1 and c3,
+against measured algorithm starts of 12.6 s and 12.4 s.
+
+| Rung | H as logged | H on the algorithm's clock | simulation |
+|---|---|---|---|
+| c1 | 0.366 | 0.160 | 0.165 |
+| c2 | 0.524 | 0.120 | 0.122 |
+| c3 | 0.583 | 0.128 | 0.112 |
+
+Everything else in those records is unaffected — positions, centroid distances,
+wobble, tilt, clipping and delay never use `t`. **Only runs with a moving
+density are affected**, which is every coverage run from 16 Sep onward and none
+before: the 2 Sep runs used `density: uniform`, where the two clocks cannot
+disagree.
+
+The analysis now recomputes H on the algorithm's clock
+(`ladder_common.recompute_coverage_H`), and figure 2 of the coverage ladder
+plots both series so the artefact is visible rather than hidden. **The recorder
+itself is still wrong for future moving-density runs.** The fix is for the
+recorder to start its density clock when the fleet starts moving, rather than
+when the recorder is launched — not yet implemented, because it changes a file
+that every past record was written by.
+
+The general lesson is worth keeping: *a metric that reads a clock is a metric
+that can be out of phase with the thing it scores.* The first version of this
+section reported gaps of +111%, +328% and +432% and would have concluded that
+coverage degrades catastrophically with speed. It does not.
+
+### 15e. The delay, split into its software and physical halves
+
+Because each flight carries simulated agents that share the software path and
+have no hardware, the loop delay splits for the first time:
+
+| | real drone | simulated agents, same flight |
+|---|---|---|
+| Coverage c3 | 0.25 s | 0.16 s |
+| Flocking s1 | 0.31 s | 0.15–0.16 s |
+| Flocking s2 | 0.33 s | 0.16–0.17 s |
+| Flocking 8 Sep (2 real) | 0.28–0.32 s | 0.14–0.19 s |
+
+A simulated agent's 0.15–0.17 s is entirely **software**: the mocap/state
+publish path, the 10 Hz algorithm tick, and message passing. The real drone adds
+**0.10–0.16 s** on top, which is the radio, the firmware, and the airframe
+physically tilting.
+
+This **corrects the estimate in 13e**, which guessed ~90 ms of sensing and
+~180 ms of actuation from the rates in the code. Measured, it is closer to the
+reverse: the software half is the larger one. Two caveats:
+
+- both columns are measured by the same method (replay the law on logged
+  positions, cross-correlate against achieved acceleration), so the *difference*
+  is trustworthy even though each absolute number inherits the same
+  centred-difference smoothing;
+- a simulated agent's dynamics are exact, so its 0.16 s is a floor for the
+  software path, not a full accounting of it.
+
+It also matters for the mechanism. A delay made mostly of **dead time** (command
+in flight, nothing happening) destabilises a loop more than the same delay made
+of a *gradual* response, because a gradual response also attenuates. A toy model
+with only 0.05 s of dead time and a 0.11 s tilt lag predicts β = 6 would be
+stable — and r6 was emphatically not. The measured split says there is enough
+genuine dead time in the software path for that prediction to fail, which is
+what the flights show.
+
+### 15f. Where the threshold sits now
+
+Ten flights, three algorithms, three papers, one number:
+
+| Algorithm | k·τ | Wobble, real drone | Verdict |
+|---|---|---|---|
+| Coverage c1 | 0.34 | 0.46 cm | quiet |
+| Trochoidal r2 | 0.6 | 1.0–1.2 cm | quiet |
+| Flocking s2 | 0.64 | 0.77 cm | quiet |
+| Coverage c2 | 0.67 | 1.94 cm | quiet |
+| Trochoidal r3 | 0.9 | 1.3–2.2 cm (bursts to 22) | decaying transient |
+| **Coverage c3** | **1.01** | **23.3 cm** | **sustained** |
+| Flocking s1 | 1.32 | 2.88 cm | sustained, mild |
+| Trochoidal r6 | 1.7 | 17 cm | sustained |
+| Trochoidal r10 | 2.8 | 15–19 cm | sustained |
+| Trochoidal r14 | 3.9 | 15–16 cm | sustained |
+
+**The threshold is bracketed between 0.67 and 1.01**, tighter than the "fuzzy
+≈ 1" of 13c, and coverage c3 is now the binding upper bound: severe oscillation
+at exactly 1.0. Trochoidal r4 (k·τ ≈ 1.1) would still be worth flying, but the
+bracket no longer depends on it.
+
+Why flocking s1 at 1.32 wobbles less than coverage c3 at 1.01 is worth stating rather
+than smoothing over: **amplitude is set by the clamp and the speed of the
+reference, not by how far past the threshold you are.** Flocking's leader crawls
+at 0.15 m/s and its commands sit near the clamp at 0.5-scale accelerations;
+coverage c3 is chasing a hotspot with kp = 9 and demands 4.7 m/s² against a 3.5
+clamp. Past the threshold, k decides *whether*, and the clamp and the reference
+decide *how big*.
+
+### 15g. What is measured and what is inferred
+
+Measured directly from the records:
+
+- every wobble, period, tilt, speed, clipping fraction and delay in 15b and 15c;
+- the coverage cost on both clocks (15d);
+- the real/simulated delay split (15e).
+
+Inferred, and dependent on the model:
+
+- that k·τ is the *right* single number — supported by ten flights across three
+  laws, but the threshold is bracketed, not resolved;
+- that the delay's composition is dead-time-heavy (15e) — consistent with the
+  flights, not separately measured. A step-command test from hover would settle
+  it: command a fixed sideways acceleration and see whether the response starts
+  flat for ~0.1 s or begins rising immediately;
+- that the leak into the simulated agents is positional coupling rather than a
+  second mechanism. For coverage this is nearly forced (those agents have no
+  physics); for flocking the velocity-matching path of 11d remains the
+  hypothesis.
+
+### 15h. Figures and how to reproduce
+
+`tools/ladder_common.py` holds the method — replay the repo's own algorithm
+class over the logged positions, cross-correlate the command against the
+achieved acceleration for τ, band-pass 0.6–1.5 Hz for the wobble, read k out of
+the law — so coverage and flocking are measured the *same* way as trochoidal,
+not a similar way.
+
+```bash
+python3 tools/plot_ladder.py --algo coverage     # -> docs/figures/coverage_ladder/
+python3 tools/plot_ladder.py --algo flocking     # -> docs/figures/flocking_ladder/
+python3 tools/make_figure_index.py --embed       # -> docs/figures/index.html
+```
+
+Six figures per ladder: `1_summary`, `2_expected_vs_actual` (**design vs
+actual**: the same config in simulation against where the drone went, plus the
+distance between them over time), `3_promise` (the property the theorem
+promises), `4_wobble` (the ripple alone), `5_delay` (correlation curves, and
+real vs simulated τ), `6_command`.
+
+`tools/plot_key.py` draws the one cross-algorithm figure — every flight's wobble
+against its k·τ, and the 4τ test — from the three ladders' `summary.json`, so it
+cannot disagree with them. `index.html` leads with those four key figures and
+folds the rest into per-algorithm detail; `index_standalone.html` inlines the
+images for sending to someone else.
+
+A note on the setpoint: `ladder_common.setpoint()` reconstructs what
+crazyflie_node streamed, but for coverage and flocking that setpoint sits on the
+node's 0.3 m leash 94–97% of the time (trochoidal: 6–8%), because a law chasing
+a moving reference produces a command with a persistent forward bias. The
+reconstructed setpoint therefore carries the leash's shape rather than the
+law's, and is not plotted.
+
+### 15i. Next
+
+1. **Re-fly or re-upload flocking s3** (k·τ ≈ 0.4). It is the only missing rung
+   and the only one below trochoidal r2's margin.
+2. **A step-command tilt test** (15e): the one measurement that would separate
+   dead time from a gradual actuator response, and the last soft spot in the
+   mechanism story.
+3. **Trochoidal r4** (k·τ ≈ 1.1) — now confirmatory rather than load-bearing.
+4. **Fix the recorder's density clock** (15d) before any further moving-hotspot
+   run, or every future H column repeats the artefact.
+5. Lever 3 (13i) still waits on the supervisor.

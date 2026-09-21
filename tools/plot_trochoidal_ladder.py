@@ -214,7 +214,7 @@ def analyse(label, rec, cfgname, clamp=CLAMP):
     # acceleration the drones achieved, and the command they were sent
     V = np.gradient(Pg, DT, axis=0)
     Acc = np.gradient(V, DT, axis=0)
-    out = dict(cfg=cfg, label=label, clamp=clamp, beta=be, hit=hit, window=t_end - t0,
+    out = dict(cfg=cfg, label=label, clamp=clamp, rec=rec, cfg_name=cfgname, beta=be, hit=hit, window=t_end - t0,
                to_edge=(t_end - t_start) if hit else None, live=t_end - t_start,
                fast_T=sim_fast, rate=rate, per_lap=math.exp(rate * sim_fast),
                mode_growth=hw_modes[1][1], mode_r2=hw_modes[2],
@@ -627,6 +627,32 @@ def main():
     for where in ('start', 'middle'):
         for ref in ('setpoint', 'design'):
             fig_expected(runs, a.out, where=where, ref=ref)
+    # A machine-readable copy of the table, so the cross-algorithm figure
+    # (tools/plot_key.py) can put these rungs on the same axes as the coverage
+    # and flocking ladders without anyone retyping numbers.
+    import json
+    summary = {}
+    for r in runs:
+        summary[r['label']] = dict(
+            rec=os.path.basename(r.get('rec', '')), cfg=r.get('cfg_name', ''),
+            beta=float(r['beta']), window=float(r['live']),
+            drones={i: {k: (float(v[k]) if isinstance(v[k], (int, float, np.floating)) else v[k])
+                        for k in ('sat', 'lag', 'xc_max', 'shake_T', 'shake_rms',
+                                  'u_med', 'a_med')
+                        if k in v}
+                    for i, v in r['drones'].items()})
+        for i in summary[r['label']]['drones']:
+            summary[r['label']]['drones'][i]['real'] = True
+            summary[r['label']]['drones'][i]['k'] = float(r['beta'])
+            summary[r['label']]['drones'][i]['k_tau'] = float(r['beta']) * 0.28
+            summary[r['label']]['drones'][i]['wobble'] = \
+                summary[r['label']]['drones'][i].pop('shake_rms')
+            summary[r['label']]['drones'][i]['period'] = \
+                summary[r['label']]['drones'][i].pop('shake_T')
+            summary[r['label']]['drones'][i]['clip'] = \
+                summary[r['label']]['drones'][i].pop('sat')
+    with open(os.path.join(a.out, 'summary.json'), 'w') as fh:
+        json.dump(summary, fh, indent=2)
     print(f'\nfigures in {a.out}')
 
 
