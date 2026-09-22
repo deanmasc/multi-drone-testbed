@@ -128,6 +128,49 @@ Francis (IJC 82(3), 2009), in the double-integrator form of Oh & Ahn (IJRNC
 
 Config: `config/testbed_hexagon.yaml`, `config/testbed_hexagon_hybrid.yaml`
 
+#### Expanding/contracting hexagon (breathing mode)
+
+Use `ros2_ws/src/drone_testbed/config/testbed_hexagon_breathing.yaml` to keep
+the formation responding throughout a test. All desired neighbour distances,
+including the chords, expand and contract together. The default holds the
+nominal shape for 15 controller seconds, ramps the motion in over 5 seconds,
+then cycles between **0.63 m and 0.77 m side lengths** every **30 seconds**.
+The anchored drone's target scales with the formation too.
+
+Change these values under `algorithm.params`, one at a time:
+
+| Variable | Default | What to test |
+|---|---|---|
+| **`breathing_period`** | **30.0 s** | **Change this first:** compare 60, 30, 20, 15 in simulation. Shorter periods demand faster tracking. |
+| **`breathing_amplitude`** | **0.10** | Fractional size swing: 0.10 means ±10%. Compare 0.05, 0.10, 0.15 at a fixed period. **0 disables breathing.** |
+| `gain_kp` | 0.45 | Formation correction strength; vary after selecting a fixed period and amplitude. |
+| `gain_kv` | 1.2 | Velocity damping; vary separately from `gain_kp`. |
+| `breathing_start_delay` | 15.0 s | Time to form the nominal hexagon before motion starts; measured after controller activation. |
+| `breathing_ramp_duration` | 5.0 s | Time to smoothly introduce the motion; keep fixed across comparisons. |
+
+Run the visual simulation or generate a metrics record without ROS:
+
+```bash
+python3 run_sim.py --config testbed_hexagon_breathing.yaml
+
+python3 tools/sim_baseline.py \
+  --config ros2_ws/src/drone_testbed/config/testbed_hexagon_breathing.yaml \
+  --duration 150
+```
+
+The recorder follows the controller's published reference, so it measures
+**edge error and shape error against the changing target**, plus the scale
+response amplitude and phase lag. Compare `reference_scale` with
+`actual_scale`, and collect at least three full cycles after the delay/ramp
+(increase the run duration for longer periods). Keep nominal size, starting
+positions, topology, anchor and acceleration limit fixed during each sweep.
+Since the target moves, the static settling and monotonically decreasing
+energy tests do not apply.
+
+See [the experiment guide](docs/DISTANCE_BREATHING.md) for ROS rebuild and
+hardware commands, recording details and interpretation. The headless baseline
+uses ideal dynamics and does not establish hardware tracking performance.
+
 ### Algorithm Parameters
 
 All algorithms are configured via `ros2_ws/src/drone_testbed/config/testbed.yaml`:

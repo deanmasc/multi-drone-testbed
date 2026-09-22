@@ -172,6 +172,16 @@ Config params:
                                      keep a lab flight inside the geofence.
   anchor_gain_kp:     anchor position gain. Default 0.4.
   anchor_gain_kd:     anchor damping, applied on top of gain_kv. Default 0.0.
+
+Optional breathing experiment (not the static convergence theorem):
+  breathing_amplitude:     fractional distance change, 0 <= A < 1; default 0
+                           disables motion and preserves the static law.
+  breathing_period:        seconds per expansion/contraction cycle; default 30.
+  breathing_start_delay:   controller seconds holding nominal size; default 15.
+  breathing_ramp_duration: seconds to smoothly introduce the amplitude; default 5.
+All edge lengths scale together by 1 + A*ramp*sin(2*pi*(t-delay)/period).
+Anchors scale about formation_center too. The controller exposes the reference
+actually used by the latest control tick so recording never guesses its phase.
 """
 
 import math
@@ -186,6 +196,37 @@ from drone_testbed.utils.types import DroneState, ControlOutput
 
 # Named chord sets, as offsets around the ring. `cycle` is always present.
 TOPOLOGIES = ('octahedron', 'minimal', 'k33', 'cycle', 'complete', 'custom')
+
+
+class BreathingProfile:
+    """Shared, validated scale schedule for the controller and analysis."""
+
+    def __init__(self, params):
+        self.amplitude = float(params.get('breathing_amplitude', 0.0))
+        self.period = float(params.get('breathing_period', 30.0))
+        self.delay = float(params.get('breathing_start_delay', 15.0))
+        self.ramp_duration = float(params.get('breathing_ramp_duration', 5.0))
+        for key, value in (('amplitude', self.amplitude), ('period', self.period),
+                           ('start_delay', self.delay),
+                           ('ramp_duration', self.ramp_duration)):
+            if not math.isfinite(value):
+                raise ValueError(f'breathing_{key} must be finite')
+        if not 0.0 <= self.amplitude < 1.0:
+            raise ValueError('breathing_amplitude must be >= 0 and < 1')
+        if self.period <= 0 or self.ramp_duration <= 0 or self.delay < 0:
+            raise ValueError('breathing_period and breathing_ramp_duration must '
+                             'be > 0; breathing_start_delay must be >= 0')
+
+    @property
+    def enabled(self):
+        return self.amplitude > 0.0
+
+    def scale(self, t):
+        elapsed = max(0.0, float(t) - self.delay)
+        q = min(1.0, elapsed / self.ramp_duration)
+        ramp = q * q * (3.0 - 2.0 * q)  # zero slope at either end
+        return 1.0 + self.amplitude * ramp * math.sin(
+            2.0 * math.pi * elapsed / self.period)
 
 
 def regular_polygon(n: int, radius: float, center: Sequence[float],
@@ -369,12 +410,19 @@ class DistanceFormation(BaseAlgorithm):
         self._anchor_kp = 0.4
         self._anchor_kd = 0.0
         self._rigidity: Dict[str, float] = {}
+        self._breathing = BreathingProfile({})
+        self._center = np.zeros(2)
+        self.reset()
 
     def name(self) -> str:
         return "DistanceFormation"
 
     def configure(self, params: dict, drone_ids: List[str]) -> None:
         self._ids = list(drone_ids)
+        self._breathing = BreathingProfile(params)
+        self._center = np.asarray(params.get('formation_center', [0.0, 0.0]),
+                                  dtype=float)
+        self.reset()
         self._targets, self._edges, self._dist = formation_spec(
             params, self._ids)
 
@@ -401,6 +449,11 @@ class DistanceFormation(BaseAlgorithm):
 
         self._rigidity = rigidity_report(self._targets, self._edges)
         self._report_rigidity(params)
+        if self._breathing.enabled:
+            print(f'[DistanceFormation] breathing +/-{100*self._breathing.amplitude:g}%, '
+                  f'period {self._breathing.period:g}s, '
+                  f'delay {self._breathing.delay:g}s, '
+                  f'ramp {self._breathing.ramp_duration:g}s')
 
     def _report_rigidity(self, params: dict) -> None:
         """Say at startup whether the requested shape is actually stabilisable.
@@ -442,6 +495,10 @@ class DistanceFormation(BaseAlgorithm):
         states: Dict[str, DroneState],
         dt: float,
     ) -> Dict[str, ControlOutput]:
+        if not math.isfinite(dt) or dt <= 0:
+            raise ValueError('control dt must be positive and finite')
+        scale = self._breathing.scale(self._time)
+        self._reference = (self._time, scale)
         controls = {}
 
         for drone_id, state in states.items():
@@ -459,13 +516,14 @@ class DistanceFormation(BaseAlgorithm):
                 if other is None:
                     continue
                 z = state.position - other.position
-                force -= (float(z @ z) - d_sq) * z
+                force -= (float(z @ z) - d_sq * scale * scale) * z
 
             accel = self._kp * force - self._kv * state.velocity
 
             # Optional absolute-position feedback -- ours, not the paper's.
             target = self._anchor.get(drone_id)
             if target is not None:
+                target = self._center + scale * (target - self._center)
                 accel += (-self._anchor_kp * (state.position - target)
                           - self._anchor_kd * state.velocity)
 
@@ -477,7 +535,13 @@ class DistanceFormation(BaseAlgorithm):
                 # publish. crazyflie_node integrates the command.
             )
 
+        self._time += dt
         return controls
 
+    def reference(self):
+        """(controller seconds, scale) used by the last compute_controls call."""
+        return self._reference
+
     def reset(self) -> None:
-        pass
+        self._time = 0.0
+        self._reference = (0.0, 1.0)
