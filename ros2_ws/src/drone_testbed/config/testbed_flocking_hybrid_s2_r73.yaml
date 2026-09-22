@@ -1,0 +1,155 @@
+# VARIANT of testbed_flocking_hybrid_s2.yaml: SENSE RANGE ladder, r = 0.73
+# (docs/LAB_PLAN_2026-09-22.md). The gains are s2's, UNCHANGED -- this is the
+# rescaled law that flew clean on 16 Sep (wobble 0.77 cm, 0% clipped, lattice
+# error within 1.2% of simulation).
+#
+# WHAT IS UNDER ATTACK. Olfati-Saber's proof needs the neighbour graph to STAY
+# CONNECTED. That is the assumption a real deployment loses first -- limited
+# radio range, occlusion, a neighbour behind an obstacle -- and it is the one
+# this ladder breaks. sense_range is how far an agent can SEE; it does not move
+# the drones. Spacing stays 0.70 and the settled geometry stays put:
+#
+#     sides          0.586 m      (four pairs)
+#     short diagonal 0.700 m
+#     long diagonal  0.939 m      already invisible at r = 0.84
+#
+# So the baseline already runs on 5 of 6 possible edges. At r = 0.73 the pairs
+# it can still see are: the four 0.586 m sides, with the 0.700 m diagonal marginal.
+#
+# r/d here is 1.04. flocking.py's own docstring puts the usual choice at
+# 1.2-1.5, and the s2 baseline is 1.20 -- already at the bottom of that band.
+# This ladder walks below it.
+#
+# TWO THINGS TO EXPECT, BOTH REAL:
+#
+#   1. k FALLS. The own-velocity gain is c2_gamma + c2_alpha x sum of bump
+#      weights, so fewer visible neighbours means a smaller k and therefore a
+#      BIGGER delay margin. Connectivity degrades while the oscillation risk
+#      improves. That is a confound, but a benign one -- it moves away from
+#      ringing, not toward it -- and the analysis recomputes k per drone from
+#      the flight data anyway. Simulated k x tau here: filled in below.
+#
+#   2. flocking.py REFUSES to configure with sense_range <= spacing (0.70),
+#      because agents at the desired spacing could not see each other and the
+#      flock would never form. 0.73 is near that floor; going lower needs
+#      spacing to drop too, which would change the geometry and stop this
+#      being a single-variable test.
+#
+# WHAT SIMULATION SAYS, AND WHY THAT SHARPENS THE TEST. Swept in simulation
+# over r = 0.84, 0.78, 0.73, 0.715, 0.705, the graph NEVER fragments: every
+# legal rung settles on the four-sided cycle and stays connected 100% of ticks.
+# The flock COMPRESSES to keep its neighbours visible --
+#
+#     r 0.84 -> sides 0.584, lattice err 0.110
+#     r 0.78 -> sides 0.569, lattice err 0.131
+#     r 0.73 -> sides 0.550, lattice err 0.150
+#
+# -- which is the potential field doing exactly what Olfati-Saber designed it
+# to do. So this is NOT a test of whether connectivity survives; the theory
+# says it does, and simulation agrees.
+#
+# It is a test of whether the HARDWARE can hold a marginal edge. Simulation has
+# no noise and no delay, so a pair sitting exactly at the sensing boundary
+# stays visible forever. On hardware that pair is 0.28 s stale and carries
+# VICON noise, so it should flicker. ANY reading below 100% connected on the
+# real drone is a pure physical-layer effect, because the ideal version of the
+# same flight is 100%.
+#
+# MEASURE: `connected` and `n_edges` (logged every tick) against simulation's
+# 100% and 4.00; lattice error against the numbers above; d_min for the record.
+# The compression itself is the quantitative prediction -- does the real flock
+# pull in by the same 6% the theory says it should?
+#
+# FLOWN WITH ONE REAL DRONE: drone1 (VICON drone_1) on (0.68, 0.65).
+# drone2, drone3 and drone4 are simulated and carry no delay.
+#
+#   ros2 launch drone_testbed hardware_hybrid.launch.py \
+#     config:=config/testbed_flocking_hybrid_s2_r73.yaml \
+#     hw_drone:=drone1 cf_name:=drone_1 mocap_name:=drone_1 \
+#     flight_duration:=120.0
+
+simulation:
+  dt: 0.1
+  control_rate: 10.0     # verified identical behaviour at 5, 10 and 20 Hz
+  sim_rate: 10.0
+  # Same box the real drones are geofenced to, so a virtual agent cannot lead a
+  # real one somewhere it would be aborted for following.
+  bounds: 1.5
+
+# PLACE THE REAL DRONE(S) ON THESE MARKS before launching. For a virtual drone
+# the position below is what it starts from; for a real one mocap decides where
+# it actually is, but the algorithm was sized assuming it starts here.
+#
+# The layout is a square of side ~1.3 m, DELIBERATELY NUDGED off perfect
+# symmetry. This matters. A perfectly symmetric square start stays symmetric --
+# the drones settle into a square (both diagonals 0.828 m) instead of the usual
+# diamond, because nothing in the law breaks the tie. That equilibrium is a
+# knife edge: real mocap noise and prop wash will break it mid-flight and the
+# shape will collapse to the diamond at an unpredictable moment. Starting
+# asymmetric makes the outcome deterministic and repeatable.
+#
+# drone1 and drone2 are placed on OPPOSITE corners on purpose. They settle as
+# the long diagonal of the diamond, the furthest-separated pair, so those are
+# the two to make real -- and they are already the two airframes configured in
+# config/crazyflies.yaml, so hw_drone, cf_name and mocap_name all line up
+# without a confusing cross-mapping.
+drones:
+  - id: "drone1"          # REAL when flying two. Top-right corner.
+    initial_position: [0.68, 0.65]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone2"          # REAL when flying two. Bottom-left corner.
+    initial_position: [-0.60, -0.65]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone3"          # virtual. Top-left corner.
+    initial_position: [-0.65, 0.62]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone4"          # virtual. Bottom-right corner.
+    initial_position: [0.63, -0.66]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+
+# Predicted steady state from the starts above, measured over 120 s:
+#
+#   drone1-drone2  0.939   <- long diagonal: THE TWO REAL DRONES
+#   drone3-drone4  0.700   <- short diagonal, both virtual
+#   drone1-drone3  0.586      drone1-drone4  0.586
+#   drone2-drone3  0.586      drone2-drone4  0.586
+#
+#   closest approach between ANY two   0.582 m
+#   furthest any drone gets from the origin  1.124 m
+#       -> 0.38 m of margin to the 1.5 m geofence, 0.68 m to the 1.8 m abort
+#   peak speed  0.43 m/s during the 3 s pull-in, 0.16 m/s once settled
+#
+# SEPARATION OF THE TWO REAL DRONES. Which pair lands on which diagonal depends
+# on where they actually start, so it is worth knowing how much placement error
+# this tolerates. Over 20 trials with every drone displaced by up to +/-8 cm,
+# drone1-drone2 stayed the long 0.939 m diagonal in 13 and fell back to the
+# short 0.700 m one in the other 7. It never became a 0.586 m side. So the
+# guaranteed floor between the two aircraft is 0.70 m; the usual case is 0.94 m.
+#
+# Across 45 random layouts the closest ANY two drones came was 0.475 m, and two
+# drones deliberately started 0.15 m apart were pushed steadily apart and never
+# got closer. The repulsion term works. It is still only a 2D law with no
+# knowledge of rotor extent, so keep the launch file's altitude stagger.
+algorithm:
+  name: "Flocking"
+  params:
+    spacing: 0.70          # settles at 0.84x -> 0.586 m actual
+    sense_range: 0.73      # s2 baseline 0.84; r/d = 1.04 (was 1.20)
+    epsilon: 0.1
+    bump_h: 0.2
+    action_a: 5.0
+    action_b: 5.0
+    gain_c1_alpha: 0.25    # rescale xc^2; baseline 1.0
+    gain_c2_alpha: 1.0     # rescale xc; baseline 2.0
+    gain_c1_gamma: 0.125   # rescale xc^2; baseline 0.5
+    gain_c2_gamma: 0.7     # rescale xc; baseline 1.4
+    gamma_mode: "circle"
+    gamma_center: [0.0, 0.0]
+    gamma_radius: 0.6      # 0.8 in the desk sim; pulled in for the geofence
+    gamma_speed: 0.075     # rescale xc; baseline 0.15 (25 s lap) -> 50.3 s lap
+    gamma_heading: 0.0
+    max_accel: 0.5
