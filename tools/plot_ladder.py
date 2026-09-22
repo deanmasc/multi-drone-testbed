@@ -38,7 +38,7 @@ LADDERS = {
     ),
     'flocking': dict(
         algo='Flocking', duration=150.0, promise='lattice_err',
-        runs=[('s3', 'flocking_20260916_170000.txt', 'testbed_flocking_hybrid_s3.yaml'),
+        runs=[('s3', 'flocking_20260916_165909.txt', 'testbed_flocking_hybrid_s3.yaml'),
               ('s2', 'flocking_20260916_165223.txt', 'testbed_flocking_hybrid_s2.yaml'),
               # s1 is the UNRESCALED law (c = 1), not a reference run: the
               # reference every rung is scored against is simulation of its own
@@ -152,10 +152,10 @@ def fig_summary(runs, algo, spec, out):
     allw = [d['wobble'] * 100 for r in runs for d in r['drones'].values() if d['wobble'] > 0]
     if allw and max(allw) / min(allw) > 20:
         ax[0].set_yscale('log')
-        ax[0].set_ylabel('wobble RMS (cm, log scale)')
+        ax[0].set_ylabel('radius of oscillation (cm, log scale)')
     else:
-        ax[0].set_ylabel('wobble RMS (cm)')
-    ax[0].set_title('Wobble vs the delay margin')
+        ax[0].set_ylabel('radius of oscillation (cm)')
+    ax[0].set_title('Oscillation size vs the delay margin')
     ax[0].plot([], [], 'o', color=C.INK, label='real drone (filled)')
     ax[0].plot([], [], 'o', mfc='white', mec=C.INK, label='simulated drone')
     ax[0].legend(fontsize=7.5, loc='upper left')
@@ -250,14 +250,20 @@ def fig_expected_vs_actual(runs, algo, spec, out, span=25.0):
         if k == 0:
             a.set_ylabel('y (m)')
             a.legend(fontsize=7.5, loc='upper left')
-        lo.plot(r['t'][m], gap, color=cc[r['label']], lw=1.4,
+        # Each rung's window is the middle of ITS OWN flight, and the flights
+        # are not the same length, so the traces are laid over a common
+        # "seconds into the window" axis rather than wall clock -- otherwise
+        # they sit side by side and cannot be compared.
+        lo.plot(r['t'][m] - r['t'][m][0], gap, color=cc[r['label']], lw=1.4,
                 label=f"{rung_label(r, two_line=False)}: "
                       f"median {np.median(gap):.0f} cm")
         r['design_gap'] = float(np.median(gap))
-    lo.set_xlabel('time since algorithm start (s)')
+    lo.set_xlabel(f'seconds into each rung\'s own mid-flight {span:.0f} s window')
     lo.set_ylabel('distance from where\nthe law wanted it (cm)')
-    lo.set_title('Design vs actual, over the same window', fontsize=10)
-    lo.legend(fontsize=8, ncol=len(runs))
+    lo.set_title('Design vs actual, the three windows laid over each other',
+                 fontsize=10)
+    lo.set_ylim(0, lo.get_ylim()[1] * 1.28)
+    lo.legend(fontsize=8, ncol=len(runs), loc='upper left', framealpha=0.9)
     fig.suptitle(f'{spec["algo"]}: design vs actual — {span:.0f} s mid-flight',
                  y=0.97, fontsize=11, fontweight='bold')
     fig.savefig(os.path.join(out, '2_expected_vs_actual.png'))

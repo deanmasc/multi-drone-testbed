@@ -1431,6 +1431,7 @@ group. `max_accel` 3.5 on every run.
 | c1 | `testbed_coverage_c1.yaml` | `coverage_20260916_161129` | kp 1.0, kd 1.2 | 1.20 | 0.34 |
 | c2 | `testbed_coverage_c2.yaml` | `coverage_20260916_161409` | kp 4.0, kd 2.4 | 2.40 | 0.67 |
 | c3 | `testbed_coverage_c3.yaml` | `coverage_20260916_161948` | kp 9.0, kd 3.6 | 3.60 | 1.01 |
+| s3 | `testbed_flocking_hybrid_s3.yaml` | `flocking_20260916_165909` | c2α 0.667, c2γ 0.467 | 1.39–1.61 | 0.39–0.45 |
 | s2 | `testbed_flocking_hybrid_s2.yaml` | `flocking_20260916_165223` | c2α 1.0, c2γ 0.7 | 2.06–2.34 | 0.58–0.66 |
 | s1 | `testbed_flocking_hybrid.yaml` | `flocking_20260916_164800` | c2α 2.0, c2γ 1.4 | 4.12–4.75 | 1.15–1.33 |
 
@@ -1452,8 +1453,8 @@ only thing that moves is k, and therefore k·τ. Coverage needed a *moving*
 hotspot (0.3 rad/s on a 0.6 m orbit) to have anything to track, because plain
 coverage settles in 1–5 s and then sits still.
 
-A sixth run, flocking `s3` (k·τ ≈ 0.4), was flown but **its upload never
-completed**; the Drive folder is empty. It remains the missing quiet end of the
+Flocking `s3` (k·τ ≈ 0.4) was flown on the same afternoon but its record was
+only uploaded on 22 Sep; it is included here and completes the quiet end of the
 flocking ladder.
 
 ### 15b. Coverage: the quiet algorithm made to ring
@@ -1504,20 +1505,34 @@ it fail in exactly the way the delay model says it should.
 
 ### 15c. Flocking: the rescale closes the gap to simulation
 
-| | s2 (k·τ 0.64) | s1 (k·τ 1.32) |
-|---|---|---|
-| Wobble RMS, real drone | **0.77 cm** | 2.88 cm |
-| Own (fleet-common removed) | 0.62 cm | 2.57 cm |
-| Ripple period | 1.22 s | 1.16 s |
-| Measured τ, real drone | 0.33 s (corr 0.80) | 0.31 s (corr 0.90) |
-| Command clipped | **0%** | **83%** |
-| Median tilt demanded | 0.8° | 4.6° |
-| Median speed | 0.08 m/s | 0.20 m/s |
-| Lattice error vs simulation | **−1.2%** | **+40.8%** |
-| Median distance from the designed position | **12 cm** | 21 cm |
-| Wobble, simulated agents | 0.06–0.13 cm | 0.84–0.96 cm |
-| Fleet-common ripple | 0.16 cm | 0.69 cm |
+| | s3 (k·τ 0.45) | s2 (k·τ 0.64) | s1 (k·τ 1.32) |
+|---|---|---|---|
+| Wobble RMS, real drone | **0.46 cm** | 0.77 cm | 2.88 cm |
+| Own (fleet-common removed) | 0.37 cm | 0.62 cm | 2.57 cm |
+| Ripple period | 1.42 s* | 1.22 s | 1.16 s |
+| Measured τ, real drone | 0.34 s (corr 0.72) | 0.33 s (corr 0.80) | 0.31 s (corr 0.90) |
+| Command clipped | **0%** | **0%** | **83%** |
+| Median tilt demanded | 0.5° | 0.8° | 4.6° |
+| Median speed | 0.06 m/s | 0.08 m/s | 0.20 m/s |
+| Lattice error vs simulation | **−0.1%** | **−1.2%** | **+40.8%** |
+| Median distance from the designed position | **6 cm** | 12 cm | 21 cm |
+| Wobble, simulated agents | 0.02–0.05 cm | 0.06–0.13 cm | 0.84–0.96 cm |
+| Fleet-common ripple | 0.09 cm | 0.16 cm | 0.69 cm |
+| Closest approach d_min | 0.57 m | 0.58 m | 0.46 m |
+| Window | 147 s | 119 s | 119 s |
 
+\* At s3 there is barely a ripple left to time: 0.46 cm is the same figure the
+quietest coverage rung returned, so the period fit is running on close to the
+measurement floor and should not be read as precisely as the s1/s2 entries.
+
+- **s3 is the quiet end, and it arrives where the mechanism says it should.**
+  Every column improves monotonically from s1 to s3, and at k·τ 0.45 the real
+  drone's wobble (0.46 cm) is indistinguishable from coverage c1's at k·τ 0.34
+  (0.46 cm) — two different algorithms, two different papers, the same floor.
+  That floor is what the hardware itself contributes once the delay stops
+  driving anything, and nothing below k·τ ≈ 0.45 buys any more quiet.
+- **The lattice error at s3 is −0.1% of simulation of its own config.** The
+  gap the project set out to explain is, at this rung, not measurable.
 - **At s2 the sim-to-hardware gap does not shrink, it closes.** The settled
   lattice error is within 1.2% of simulation of the same file, the command never
   clips, and the wobble drops 3.7×. The flock is the same flock — same spacing,
@@ -1607,25 +1622,45 @@ what the flights show.
 
 ### 15f. Where the threshold sits now
 
-Ten flights, three algorithms, three papers, one number:
+Fourteen flights, three algorithms, three papers, one number:
 
 | Algorithm | k·τ | Wobble, real drone | Verdict |
 |---|---|---|---|
+| Trochoidal r1 | 0.28 | 0.5 cm | quiet |
 | Coverage c1 | 0.34 | 0.46 cm | quiet |
-| Trochoidal r2 | 0.6 | 1.0–1.2 cm | quiet |
+| Flocking s3 | 0.45 | 0.46 cm | quiet |
+| Trochoidal r2 | 0.56 | 1.0–1.2 cm | quiet |
 | Flocking s2 | 0.64 | 0.77 cm | quiet |
 | Coverage c2 | 0.67 | 1.94 cm | quiet |
-| Trochoidal r3 | 0.9 | 1.3–2.2 cm (bursts to 22) | decaying transient |
+| Trochoidal r3 | 0.84 | 1.3–2.2 cm (bursts to 22) | decaying transient |
 | **Coverage c3** | **1.01** | **23.3 cm** | **sustained** |
+| **Trochoidal r4** | **1.12** | **16.6 cm** | **sustained** |
 | Flocking s1 | 1.32 | 2.88 cm | sustained, mild |
-| Trochoidal r6 | 1.7 | 17 cm | sustained |
-| Trochoidal r10 | 2.8 | 15–19 cm | sustained |
-| Trochoidal r14 | 3.9 | 15–16 cm | sustained |
+| Trochoidal r5 | 1.40 | 21.1 cm | sustained |
+| Trochoidal r6 | 1.68 | 17 cm | sustained |
+| Trochoidal r10 | 2.80 | 15–19 cm | sustained |
+| Trochoidal r14 | 3.92 | 15–16 cm | sustained |
+
+Trochoidal r4 (22 Sep) is the strongest single confirmation the ladder has
+produced. It sits at k·τ 1.12, just past the bracket, and it rings at 16.6 cm —
+but it saturates the command only **10% of the time**, against 79–95% for r5,
+r6, r10 and r14. Clipping is therefore not what causes the oscillation; it is
+only what stops the oscillation growing. That distinction was previously an
+inference from the model, and r4 is the flight that separates the two.
+Trochoidal r1 anchors the other end: β = 1 is the paper's own published gain
+set, k·τ 0.28, and it returns 0.5 cm — the same floor as coverage c1 and
+flocking s3.
+
+Flocking s3 does not move the bracket — it lands in the quiet half, where the
+mechanism already said it would — but it does put a floor under the table: two
+algorithms now return the *same* 0.46 cm at two different k·τ below 0.5, which
+is how you can tell the lower rungs have stopped measuring the delay and started
+measuring the hardware.
 
 **The threshold is bracketed between 0.67 and 1.01**, tighter than the "fuzzy
 ≈ 1" of 13c, and coverage c3 is now the binding upper bound: severe oscillation
-at exactly 1.0. Trochoidal r4 (k·τ ≈ 1.1) would still be worth flying, but the
-bracket no longer depends on it.
+at exactly 1.0, with trochoidal r4 the next rung up at 1.12. Nothing quiet has
+been measured above 0.67 and nothing calm above 1.01, across three laws.
 
 Why flocking s1 at 1.32 wobbles less than coverage c3 at 1.01 is worth stating rather
 than smoothing over: **amplitude is set by the clamp and the speed of the
@@ -1645,7 +1680,7 @@ Measured directly from the records:
 
 Inferred, and dependent on the model:
 
-- that k·τ is the *right* single number — supported by ten flights across three
+- that k·τ is the *right* single number — supported by fourteen flights across three
   laws, but the threshold is bracketed, not resolved;
 - that the delay's composition is dead-time-heavy (15e) — consistent with the
   flights, not separately measured. A step-command test from hover would settle
@@ -1691,12 +1726,90 @@ law's, and is not plotted.
 
 ### 15i. Next
 
-1. **Re-fly or re-upload flocking s3** (k·τ ≈ 0.4). It is the only missing rung
-   and the only one below trochoidal r2's margin.
+1. **A run-to-run repeat, flown twice in the same session.** Every rung in
+   every table is a single flight, so nothing above has an error bar. It has to
+   be same-session to mean anything, and the rung worth repeating is one that
+   oscillates — c3's 23 cm or r6's 17 cm — since those are the numbers the whole
+   argument rests on.
 2. **A step-command tilt test** (15e): the one measurement that would separate
    dead time from a gradual actuator response, and the last soft spot in the
    mechanism story.
-3. **Trochoidal r4** (k·τ ≈ 1.1) — now confirmatory rather than load-bearing.
-4. **Fix the recorder's density clock** (15d) before any further moving-hotspot
+3. **Fix the recorder's density clock** (15d) before any further moving-hotspot
    run, or every future H column repeats the artefact.
-5. Lever 3 (13i) still waits on the supervisor.
+4. Lever 3 (13i) still waits on the supervisor.
+
+### 15j. Two levers that widen the gap without touching k·τ
+
+Every ladder in 15a–15f varies k·τ. These two sweeps (22 Sep) deliberately do
+not: within each sweep the gains are byte-identical and only the *task* changes.
+The question they answer is whether the delay mechanism is the only thing
+separating hardware from theory, or just the one we found first.
+
+Both sweeps are **one session only**. Coverage c2 and flocking s2 were also
+flown on 16 Sep with the same configs, and those flights stay in the k·τ ladder,
+but they are not used here: a different session means different batteries, a
+different VICON calibration and drones on different marks, and mixing sessions
+puts a session difference on the same axis as the lever. The cost is that the
+flocking sweep is only two points.
+
+Figures: `docs/figures/coverage_hotspot/` and `docs/figures/flocking_sense/`,
+built by `tools/plot_levers.py`.
+
+**Coverage — hotspot orbit rate, gains fixed at c2 (k·τ 0.67 throughout)**
+
+| | 0.3 rad/s | 0.6 rad/s | 0.9 rad/s |
+|---|---|---|---|
+| Oscillation radius, real drone | 0.87 cm | 1.28 cm | 1.36 cm |
+| Command clipped | 0% | 0% | 0% |
+| Distance from the designed position, median | 4 cm | 8 cm | **13 cm** |
+| … 95th percentile | 7 cm | 12 cm | **46 cm** |
+| Fleet lag behind the hotspot | 1.15 s = 20° | 1.00 s = 34° | 0.85 s = **44°** |
+| … the same lag in simulation | 1.40 s = 24° | 1.25 s = 43° | 1.10 s = 57° |
+| Coverage cost H at its own phase | 0.1058 | 0.1117 | 0.1222 |
+| … simulation of the same file | 0.1057 | 0.1110 | 0.1209 |
+| … gap | +0.1% | +0.6% | +1.1% |
+
+**Flocking — sense range, s2 gains and 0.70 m spacing throughout**
+
+| | 0.78 m | 0.73 m |
+|---|---|---|
+| k (own-velocity gain) | 1.90 | 1.74 |
+| k·τ | 0.53 | 0.49 |
+| Oscillation radius, real drone | 0.41 cm | 0.54 cm |
+| Settled distance between neighbours | 0.575 m | 0.562 m |
+| … in simulation | 0.569 m | 0.550 m |
+| … the law asks for | 0.70 m | 0.70 m |
+| Graph connected | 100% | 99.3% |
+| Distance from the designed position, median | 6 cm | 5 cm |
+
+- **The fleet runs a fixed lag behind a moving reference, not a fixed angle.**
+  Coverage trails the hotspot by about a second at every speed; tripling the
+  speed turns that same second into 20° → 44° of orbit, and that is what raises
+  H and what puts the drone 13 cm off its designed position. Nothing about the
+  hardware got worse — the task got harder in exactly the way a constant lag
+  predicts.
+- **Scored at the phase it actually ran at, hardware matches simulation to
+  1% at every speed.** Scored at a fixed phase instead, hardware appears to beat
+  simulation by 4–13%, growing with speed — a phase-alignment artefact in the
+  same family as the recorder defect of 15d, because `t_start` is only
+  recoverable to about a tick and at 0.9 rad/s a quarter of a second is 13° of
+  hotspot phase. *Caveat:* hardware's measured lag is a consistent 0.25 s
+  shorter than simulation's, which is the same size as that ambiguity, so it
+  should not be read as hardware leading simulation.
+- **The flock settles well short of the spacing it is told to hold**, at 0.575
+  and 0.562 m against 0.70 m, and shorter still as the sense range shrinks.
+  Simulation of the same file settles at 0.569 and 0.550 m, so this is the
+  control law's own behaviour and not a hardware limit.
+- **Shrinking the sense range does not fragment the flock — the second time
+  this prediction has been wrong.** 15c predicted the graph would flicker in and
+  out of connected; the simulation said it would not; hardware agrees with the
+  simulation, staying connected 99–100% of the flight. The flock compresses to
+  stay inside the shrinking radius rather than losing edges.
+- **Both levers widen the gap from *theory* without widening the gap from
+  *simulation*.** That is the point of the two sweeps taken together. k·τ is not
+  just one knob among several: it is the only one so far under which the
+  physical layer becomes the binding constraint. Everything these two levers
+  break, an ideal simulation breaks in the same way and by the same amount.
+- **What these sweeps cannot say** is how much of any of it is run-to-run
+  scatter, because each rung is still a single flight. That remains item 1 of
+  15i, and it has to be answered inside one session to be worth anything.

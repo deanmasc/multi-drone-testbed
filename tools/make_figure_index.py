@@ -25,7 +25,7 @@ FIG = os.path.join(ROOT, 'docs', 'figures')
 
 LADDERS = [
     dict(key='trochoidal_ladder', name='Trochoidal', accent='#c2571a',
-         blurb='Five rungs of the same pattern, β from 2 to 14. The rung where '
+         blurb='Eight rungs of the same pattern, β from 1 to 14. The rung where '
                'the oscillation starts is the whole result.'),
     dict(key='coverage_ladder', name='Coverage', accent='#2a6db5',
          blurb='Three speeds of the same coverage law chasing a moving hotspot. '
@@ -36,7 +36,49 @@ LADDERS = [
                'without changing the lattice or the path.'),
 ]
 
+# The two sweeps that hold k*tau FIXED and vary how hard the task is. They are
+# not rungs of the delay ladder, so they get their own tab rather than being
+# mixed into one of the three algorithm sections.
+LEVER_SECTIONS = [
+    dict(key='coverage_hotspot', name='Hotspot speed', accent='#c2571a',
+         blurb='Coverage at three hotspot speeds, gains untouched, all flown '
+               '22 Sep. k·τ is 0.67 in every run, so anything that changes here '
+               'is the task getting harder, not the delay margin moving.'),
+    dict(key='flocking_sense', name='Sense range', accent='#1f8a63',
+         blurb='Flocking at two sense ranges, gains and spacing untouched, both '
+               'flown 22 Sep. Shrinking the range takes neighbours out of the '
+               'graph without changing the spacing the law is asked to hold.'),
+]
+
 CAPTIONS = {
+    # --- levers (22 Sep) ----------------------------------------------------
+    'coverage_hotspot/1_hotspot_speed.png': (
+        'Hotspot speed: oscillation, lag and cost',
+        'Three hotspot speeds, same gains, so k·τ is 0.67 in all three. The '
+        'oscillation barely moves. The fleet flies about a second behind the '
+        'hotspot at every speed, which is a bigger and bigger part of an orbit '
+        'as the hotspot speeds up. The coverage cost rises with it, and '
+        'hardware stays within 1% of simulation of the same file.'),
+    'coverage_hotspot/3_design_vs_actual.png': (
+        'Hotspot speed: distance from the designed position',
+        'Top: where the law wanted the real drone against where it went, 25 s '
+        'mid-flight. Bottom: the same distance at every row of the whole '
+        'flight, so a run that is usually fine and occasionally bad cannot hide '
+        'behind its median. 4 cm at 0.3 rad/s, 13 cm at 0.9, with the 95th '
+        'percentile reaching 46 cm.'),
+    'flocking_sense/1_sense_range.png': (
+        'Sense range: spacing and oscillation',
+        'Left: the distance the flock actually settled on between neighbouring '
+        'drones, against the 0.70 m the law was told to hold. It settles short '
+        'of the target and shorter still as the sense range shrinks — and '
+        'simulation does the same thing, so this is the law, not the hardware. '
+        'Right: the ripple on the real drone.'),
+    'flocking_sense/3_design_vs_actual.png': (
+        'Sense range: distance from the designed position',
+        'Where the law wanted the real drone against where it went, and the '
+        'distribution of that distance over the whole flight. The drone tracks '
+        'its own design more closely at the shorter sense range, 6 cm against '
+        '5 cm median, with a tighter spread.'),
     # --- trochoidal (15-16 Sep) --------------------------------------------
     'trochoidal_ladder/1_summary.png': (
         'Wobble, tilt and clipping across the ladder',
@@ -129,7 +171,7 @@ def key_cards():
     g = lambda k, r, f, sc=1.0: _num(k, r, f, sc)
     return [
         ('key/1_threshold.png', 'The result, in one figure',
-         'Ten flights, three algorithms, three unrelated papers, plotted against '
+         'Eleven flights, three algorithms, three unrelated papers, plotted against '
          'a single number: the gain each law applies to a drone\'s own velocity, '
          'times the 0.28 s it takes that velocity to become thrust. Below '
          'k·τ ≈ 0.7 nothing oscillates. Above ≈ 1.0 everything does — and when it '
@@ -144,16 +186,17 @@ def key_cards():
          f'project produced a failure rather than found one.'),
         ('flocking_ladder/2_expected_vs_actual.png',
          'Flocking: the same fix, on a different paper\'s law',
-         f'Halving the clock — position gains ×c², velocity gains ×c, same '
-         f'lattice, same path — takes the drone from '
+         f'Slowing the clock — position gains ×c², velocity gains ×c, same '
+         f'lattice, same path — walks the drone from '
          f'{g("flocking_ladder", "s1", "design_gap")} cm off the designed position to '
-         f'{g("flocking_ladder", "s2", "design_gap")} cm, and the settled lattice error '
-         f'from +41% against simulation to −1%. The gap to simulation did not '
-         f'shrink; it closed.'),
+         f'{g("flocking_ladder", "s2", "design_gap")} cm at half speed and '
+         f'{g("flocking_ladder", "s3", "design_gap")} cm at a third, and the settled '
+         f'lattice error from +41% against simulation to −1% to −0.1%. The gap to '
+         f'simulation did not shrink; it closed.'),
         ('trochoidal_ladder/8_design_vs_actual.png',
          'Trochoidal: where the ladder started',
          'The original finding, kept here for comparison: the designed pattern '
-         'against what flew, across β = 2 to 14. The design is simulated from '
+         'against what flew, across β = 1 to 14. The design is simulated from '
          'the real start positions, because the drones sat on each other\'s '
          'marks on 15 Sep.'),
     ]
@@ -327,7 +370,7 @@ def build(embed=False):
              '<header class="top"><h1>Multi-drone testbed — flight figures</h1>',
              '<span class="sub">what the delay does to three control laws</span>',
              '<nav><button data-k="all" aria-pressed="true">Findings</button>']
-    for L in LADDERS:
+    for L in LADDERS + LEVER_SECTIONS:
         parts.append(f'<button data-k="{L["key"]}">{L["name"]}</button>')
     parts.append('</nav></header><main>')
 
@@ -346,6 +389,30 @@ def build(embed=False):
                 f'<figure class="big"><img loading="lazy" '
                 f'alt="{html.escape(title)}" '
                 f'src="{img_src(os.path.join(FIG, rel), embed)}">'
+                f'<figcaption><b>{html.escape(title)}</b>'
+                f'<span>{html.escape(note)}</span></figcaption></figure>')
+        parts.append('</div></section>')
+
+    # ---- the two levers, open rather than collapsed -------------------------
+    for L in LEVER_SECTIONS:
+        d = os.path.join(FIG, L['key'])
+        pngs = sorted((f for f in os.listdir(d) if f.endswith('.png')),
+                      key=_natural) if os.path.isdir(d) else []
+        parts.append(f'<section data-k="{L["key"]}" hidden '
+                     f'style="--accent:{L["accent"]}">'
+                     f'<h2>{L["name"]}</h2><p class="blurb">{L["blurb"]}</p>')
+        if not pngs:
+            parts.append('<p class="empty">No figures yet — run '
+                         'tools/plot_levers.py.</p></section>')
+            continue
+        parts.append('<div class="keygrid">')
+        for f in pngs:
+            title, note = caption(f'{L["key"]}/{f}')
+            shown.add(f'{L["key"]}/{f}')
+            parts.append(
+                f'<figure class="big"><img loading="lazy" '
+                f'alt="{html.escape(title)}" '
+                f'src="{img_src(os.path.join(d, f), embed)}">'
                 f'<figcaption><b>{html.escape(title)}</b>'
                 f'<span>{html.escape(note)}</span></figcaption></figure>')
         parts.append('</div></section>')

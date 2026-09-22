@@ -16,6 +16,7 @@ import argparse
 import copy
 import math
 import os
+import re
 import sys
 
 import numpy as np
@@ -36,8 +37,11 @@ LOGS = os.path.join(ROOT, 'logs', 'hw')
 # 15 Sep 2026: the first ladder with max_accel 3.5 actually reaching the drones.
 # (rung, record, config)
 RUNS = [
+    ('r1', 'trochoidalconsensus_20260922_145916.txt', 'testbed_fig4_r1.yaml'),
     ('r2', 'trochoidalconsensus_20260916_145915.txt', 'testbed_fig4_r2.yaml'),
     ('r3', 'trochoidalconsensus_20260916_143323.txt', 'testbed_fig4_r3.yaml'),
+    ('r4', 'trochoidalconsensus_20260922_144530.txt', 'testbed_fig4_r4.yaml'),
+    ('r5', 'trochoidalconsensus_20260922_145013.txt', 'testbed_fig4_r5.yaml'),
     ('r6', 'trochoidalconsensus_20260915_151744.txt', 'testbed_fig4_r6.yaml'),
     ('r10', 'trochoidalconsensus_20260915_145550.txt', 'testbed_fig4_r10.yaml'),
     ('r14', 'trochoidalconsensus_20260915_143416.txt', 'testbed_fig4.yaml'),
@@ -49,30 +53,71 @@ EDGE = 1.3        # m, end of the clean window
 PATTERN_HZ = 0.4  # below this is the designed pattern (fast lap 8-19 s)
 SHAKE_BAND = (0.6, 1.5)
 G = 9.81
-# Which agents were REAL. 15-16 Sep flew drone1 and drone4; from 22 Sep the
-# trochoidal rungs fly drone1 only. Override with --real when it differs,
-# because a simulated agent scored as real reports a delay and a wobble that
-# belong to the integrator, not to an aircraft.
+# Which agents were REAL. This is NOT the same for every rung -- 15-16 Sep flew
+# drone1 and drone4, the 22 Sep rungs fly drone1 only -- and a simulated agent
+# scored as real reports a delay and a wobble that belong to the integrator, not
+# to an aircraft. The recorder writes the answer into every record:
+#
+#     # note         real drones drone1=VICON drone_1, drone4=VICON drone_2
+#
+# so read_real() below takes it from the file. REAL is only the fallback for
+# older records written before that note existed, and --real overrides both.
 REAL = ('drone1', 'drone4')
+FORCE_REAL = None     # set by --real
+
+
+def read_real(path, ids):
+    """The real drones named in the record's own header, else REAL."""
+    try:
+        with open(path) as fh:
+            for line in fh:
+                if not line.startswith('#'):
+                    break
+                m = re.search(r'real drones\s+(.*)', line)
+                if m:
+                    got = tuple(p.split('=')[0].strip() for p in m.group(1).split(','))
+                    got = tuple(i for i in got if i in ids)
+                    if got:
+                        return got
+    except OSError:
+        pass
+    return tuple(i for i in REAL if i in ids)
 
 INK = '#1f2328'
 MUTED = '#6b7280'
 GRID = '#e5e7eb'
 DESIGN = '#9ca3af'
 # slow to fast, light to dark
-RUNG_COLOUR = {'r2': '#f0cf6b', 'r3': '#e0a93c', 'r4': '#d98c2b',
-               'r6': '#cf6f1e', 'r10': '#b4441c', 'r14': '#8f2418'}
-# evenly spaced slots, not the beta value: r2/r3/r4 would otherwise collide
-RUNG_X = {'r2': 0, 'r3': 1, 'r4': 2, 'r6': 3, 'r10': 4, 'r14': 5}
+# A sequential ramp, light to dark with beta -- the rungs are an ordered
+# magnitude, not categories, so adjacent steps are deliberately close and the
+# rung slot carries the identity.
+RUNG_COLOUR = {'r1': '#f9e7a3', 'r2': '#f3d072', 'r3': '#e8b144',
+               'r4': '#dd9130', 'r5': '#d47523', 'r6': '#c85a1b',
+               'r10': '#b03e19', 'r14': '#8f2418'}
+# evenly spaced slots, not the beta value: r1-r5 would otherwise collide
+RUNG_X = {'r1': 0, 'r2': 1, 'r3': 2, 'r4': 3, 'r5': 4,
+          'r6': 5, 'r10': 6, 'r14': 7}
 RUNGS = []                 # the rungs actually plotted, filled in main()
 DRONE_MARKER = {'drone1': 'o', 'drone4': 's'}
-# rung -> the typical speed its designed pattern asks of the real drones (median,
-# from simulation). Filled in main().
+# What each rung is CALLED on the figures. The label is the thing that was
+# actually varied -- beta, the gain on a drone's own velocity -- and the number
+# that predicts the behaviour, k*tau. It used to be the designed pattern speed,
+# but the speed is a consequence of beta rather than the knob, so a panel headed
+# "0.05 m/s" said nothing about how hard the law was braking. The speeds are
+# still printed under the summary figure, out of SPEED. Both filled in main().
 NAME = {}
+SHORT = {}
+SPEED = {}
+TAU_NOMINAL = 0.28   # s, the measured loop delay (PROJECT_AIM 13d/15e)
 
 
 def name(rung):
     return NAME.get(rung, rung)
+
+
+def name_short(rung):
+    """Just the gain, for panels too narrow for the full label."""
+    return SHORT.get(rung, rung)
 
 plt.rcParams.update({
     'font.size': 9, 'axes.titlesize': 10, 'axes.titleweight': 'bold',
@@ -146,6 +191,7 @@ def analyse(label, rec, cfgname, clamp=CLAMP):
     Rm = np.array([[math.cos(th), -math.sin(th)], [math.sin(th), math.cos(th)]])
 
     cols, D = A.load_record(rec)
+    REAL = FORCE_REAL or read_real(rec, ids)
     t = D[:, 0]
     P = np.stack([np.stack([D[:, cols.index(f'x_{i}')], D[:, cols.index(f'y_{i}')]], 1)
                   for i in ids], 1)
@@ -320,9 +366,12 @@ def fig_summary(runs, out):
     fig, axs = plt.subplots(2, 3, figsize=(11, 6.8))
 
     ax = axs[0, 0]
-    for r in runs:
+    for n, r in enumerate(runs):
         ax.bar(RUNG_X[r['label']], r['per_lap'], width=0.62, color=RUNG_COLOUR[r['label']])
-        ax.text(RUNG_X[r['label']], r['per_lap'] + 0.04, f"×{r['per_lap']:.2f}",
+        # eight bars put the value labels closer together than they are wide,
+        # so they alternate height rather than overlapping
+        ax.text(RUNG_X[r['label']], r['per_lap'] + (0.04 if n % 2 else 0.17),
+                f"×{r['per_lap']:.2f}",
                 ha='center', va='bottom', fontsize=8.5, color=INK)
     ax.axhline(1, color=INK, lw=0.8, ls='--')
     ax.axhline(2, color=MUTED, lw=0.6, ls=':')
@@ -382,9 +431,9 @@ def fig_summary(runs, out):
     fig.legend(h, ['drone1', 'drone4', 'what the designed pattern needs (simulation)'],
                loc='lower center', ncol=3, bbox_to_anchor=(0.5, -0.01))
     fig.text(0.5, -0.048, 'designed pattern speed:   '
-             + '    '.join(f'{k} = {NAME[k]}' for k in RUNGS),
+             + '    '.join(f'{k} = {SPEED[k]}' for k in RUNGS),
              ha='center', color=MUTED, fontsize=8.5)
-    fig.suptitle(f'Trochoidal speed ladder, 15–16 Sep: max_accel {CLAMP} throughout',
+    fig.suptitle(f'Trochoidal speed ladder, 15–22 Sep: max_accel {CLAMP} throughout',
                  x=0.01, ha='left', fontsize=12, fontweight='bold', color=INK)
     fig.tight_layout(rect=(0, 0.04, 1, 0.97))
     fig.savefig(os.path.join(out, '1_summary.png'))
@@ -432,8 +481,11 @@ def fig_shake(runs, out):
         ax.set_aspect('equal')
         ax.set_xlim(-0.45, 0.45)
         ax.set_ylim(-0.45, 0.45)
-        ax.set_title(name(r['label']), fontsize=10)
-        ax.set_xlabel('x, m')
+        ax.set_title(name_short(r['label']), fontsize=9.5)
+        ax.set_xticks([-0.3, 0.3])
+        ax.set_yticks([-0.3, 0.0, 0.3])
+        ax.tick_params(labelsize=8)
+        ax.set_xlabel('x, m', fontsize=8.5)
         if k == 0:
             ax.set_ylabel('y, m')
     fig.text(0.01, 0.955, 'drone1, 8 s mid-flight. Colour: the path it actually flew. '
@@ -610,14 +662,13 @@ def main():
     ap.add_argument('--r6', help='the 15 Sep rescale-6 record, until it is added to RUNS')
     ap.add_argument('--out', default=os.path.join(ROOT, 'docs', 'figures', 'trochoidal_ladder'))
     ap.add_argument('--real', default=None,
-                    help="comma-separated ids flown as real hardware "
-                         "(default drone1,drone4)")
+                    help="comma-separated ids flown as real hardware; by "
+                         "default each record's own header is believed")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     if a.real:
-        REAL_ids = tuple(x.strip() for x in a.real.split(','))
-        globals()['REAL'] = REAL_ids
-        print(f'  real drones: {", ".join(REAL_ids)}')
+        globals()['FORCE_REAL'] = tuple(x.strip() for x in a.real.split(','))
+        print(f'  real drones forced to: {", ".join(FORCE_REAL)}')
     runs = []
     for label, rec, cfgname in RUNS:
         rec = a.r6 if label == 'r6' and a.r6 else rec
@@ -628,7 +679,9 @@ def main():
         runs.append(analyse(label, path, cfgname))
     RUNGS.extend(r['label'] for r in runs)
     for r in runs:
-        NAME[r['label']] = f"{np.median([v['speed_design'] for v in r['drones'].values()]):.2f} m/s"
+        SPEED[r['label']] = f"{np.median([v['speed_design'] for v in r['drones'].values()]):.2f} m/s"
+        SHORT[r['label']] = f"β = {r['beta']:g}"
+        NAME[r['label']] = f"β = {r['beta']:g}  (k·τ {r['beta'] * TAU_NOMINAL:.2f})"
     table(runs)
     fig_summary(runs, a.out)
     fig_size(runs, a.out)
