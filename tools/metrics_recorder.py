@@ -966,7 +966,8 @@ class KuramotoMetrics(MetricSet):
             if len(values):
                 out.append(f'  {d} measured radius range  {values.min():.4f} .. {values.max():.4f} m')
         out.append('  Phase agreement alone does not establish physical rotating-ring tracking.')
-        
+        return out
+
 class DistanceFormationMetrics(MetricSet):
     """Did the shape converge -- and was it the RIGHT shape?
 
@@ -1009,7 +1010,7 @@ class DistanceFormationMetrics(MetricSet):
         self.ok = False
         try:
             from drone_testbed.algorithms.distance_formation import (
-                formation_spec, rigidity_report)
+                BreathingProfile, formation_spec, rigidity_report)
         except ImportError:
             # No workspace on this machine. Fall back to the pairwise columns
             # so the record is still readable, rather than refusing to run.
@@ -1020,6 +1021,9 @@ class DistanceFormationMetrics(MetricSet):
             return
 
         self.targets, self.edges, self.dist = formation_spec(params, ids)
+        self.breathing = BreathingProfile(params)
+        self.center = np.asarray(params.get('formation_center', [0.0, 0.0]), float)
+        self.set_reference(float('nan'), float('nan'))
         self.rigidity = rigidity_report(self.targets, self.edges)
         self.kp = float(params.get('gain_kp', 0.6))
         self.kv = float(params.get('gain_kv', 1.0))
@@ -1028,6 +1032,13 @@ class DistanceFormationMetrics(MetricSet):
         self.anchors = {ids.index(a): self.targets[ids.index(a)]
                         for a in anchor_ids if a in ids}
         self.ok = True
+
+    def set_reference(self, controller_time, scale, age=0.0, max_state_age=0.0):
+        """Latest controller reference; no phase inference from recorder time."""
+        self.reference_time = float(controller_time)
+        self.reference_scale = float(scale)
+        self.reference_age = float(age)
+        self.max_state_age = float(max_state_age)
 
     # -- geometry ----------------------------------------------------------
 
@@ -1062,26 +1073,57 @@ class DistanceFormationMetrics(MetricSet):
         cols += ['edge_rms', 'edge_max', 'd_min', 'V_pot', 'K_kin', 'W_lyap',
                  'shape_err', 'mirrored', 'orient_deg', 'cx', 'cy']
         cols += [f'{ax}_{i}' for i in self.ids for ax in ('x', 'y')]
+        if self.ok and self.breathing.enabled:
+            cols += ['reference_time', 'reference_scale', 'actual_scale',
+                     'reference_age', 'max_state_age', 'reference_valid']
         return cols
 
     def row(self, t, pos, vel):
         pos = np.asarray(pos, float)
         vel = np.asarray(vel, float)
 
+        scale = 1.0
+        extra = []
+        if self.breathing.enabled:
+            scale = self.reference_scale
+            valid = (math.isfinite(self.reference_time) and self.reference_time >= 0
+                     and math.isfinite(scale) and scale > 0
+                     and 0 <= self.reference_age <= 0.5
+                     and 0 <= self.max_state_age <= 0.5
+                     and np.isfinite(pos).all() and np.isfinite(vel).all())
+            if valid:
+                valid = math.isclose(scale, self.breathing.scale(self.reference_time),
+                                     rel_tol=1e-7, abs_tol=1e-9)
+            lengths = np.array([np.linalg.norm(pos[a] - pos[b])
+                                for a, b in self.edges])
+            actual_scale = float(lengths @ self.dist / (self.dist @ self.dist))
+            extra = [self.reference_time, scale, actual_scale,
+                     self.reference_age, self.max_state_age, float(valid)]
+            if not valid:
+                # Keep raw positions/reference diagnostics, but do not score a
+                # frozen feed, missing reference, or mismatched configuration.
+                extra[2] = float('nan')
+                return ([t] + [float('nan')] * (len(self.edges) + 11)
+                        + pos.reshape(-1).tolist() + extra)
+
+        targets = self.center + scale * (self.targets - self.center)
+        dist = self.dist * scale
+
         errs = np.array([np.linalg.norm(pos[a] - pos[b]) - d
-                         for (a, b), d in zip(self.edges, self.dist)])
+                         for (a, b), d in zip(self.edges, dist)])
         # The potential is written in the squared-distance error the law
         # actually descends, not in the length error above -- they are not the
         # same function and only the first is the Lyapunov candidate.
         sq = np.array([float((pos[a] - pos[b]) @ (pos[a] - pos[b])) - d * d
-                       for (a, b), d in zip(self.edges, self.dist)])
+                       for (a, b), d in zip(self.edges, dist)])
         V = 0.25 * self.kp * float((sq ** 2).sum())
-        for k, target in self.anchors.items():
+        for k in self.anchors:
+            target = targets[k]
             V += 0.5 * self.anchor_kp * float((pos[k] - target) @ (pos[k] - target))
         K = 0.5 * float((vel ** 2).sum())
 
         gaps = [np.linalg.norm(pos[a] - pos[b]) for a, b in self.pairs]
-        shape_err, mirrored, orient = self._rigid_fit(pos, self.targets)
+        shape_err, mirrored, orient = self._rigid_fit(pos, targets)
         centroid = pos.mean(axis=0)
 
         return ([t] + [abs(float(e)) for e in errs] +
@@ -1089,7 +1131,7 @@ class DistanceFormationMetrics(MetricSet):
                  float(min(gaps)), V, K, V + K,
                  shape_err, float(mirrored), orient,
                  float(centroid[0]), float(centroid[1])] +
-                [float(v) for v in pos.reshape(-1)])
+                [float(v) for v in pos.reshape(-1)] + extra)
 
     # -- analysis ----------------------------------------------------------
 
@@ -1126,6 +1168,8 @@ class DistanceFormationMetrics(MetricSet):
         if not self.ok:
             return ['  the drone_testbed package was not importable, so the '
                     'shape analysis could not run']
+        if self.breathing.enabled:
+            return self._summarise_breathing(t, data)
         c = {name: i for i, name in enumerate(self.columns())}
         tail = slice(max(0, len(t) - max(1, int(0.1 * len(t))) - 1), None)
 
@@ -1259,6 +1303,66 @@ class DistanceFormationMetrics(MetricSet):
         return out
 
 
+    def _summarise_breathing(self, t, data):
+        c = {name: i for i, name in enumerate(self.columns())}
+        valid = data[:, c['reference_valid']] == 1
+        steady = valid & (data[:, c['reference_time']] >=
+                          self.breathing.delay + self.breathing.ramp_duration)
+        out = ['DISTANCE FORMATION -- expansion/contraction tracking',
+               f'  amplitude +/-{100*self.breathing.amplitude:g}%; '
+               f'period {self.breathing.period:g} s',
+               f'  valid samples {valid.sum()} / {len(t)}; '
+               f'after delay/ramp {steady.sum()}',
+               '  Errors use the published controller reference, not recording time.',
+               '  W is diagnostic only: changing targets can add energy.',
+               '  Static settling and monotone-energy verdicts do not apply.']
+        out += self._rigidity_lines()
+        if valid.any():
+            out.append(f'  minimum pair separation (all valid samples) '
+                       f'{data[valid, c["d_min"]].min():.4f} m')
+        if not steady.any():
+            return out + ['  No valid samples after the settling delay/ramp.']
+        rows = data[steady]
+        edge = rows[:, c['edge_rms']]
+        shape = rows[:, c['shape_err']]
+        out += [
+            '  TRACKING AFTER DELAY/RAMP',
+            f'    edge RMS over samples     {np.sqrt(np.mean(edge**2))*1000:.2f} mm',
+            f'    edge RMS 95th percentile  {np.percentile(edge, 95)*1000:.2f} mm',
+            f'    worst edge                {rows[:, c["edge_max"]].max()*1000:.2f} mm',
+            f'    shape RMS over samples    {np.sqrt(np.mean(shape**2))*1000:.2f} mm',
+            f'    shape error peak          {shape.max()*1000:.2f} mm',
+            f'    samples within edge/shape tolerances '
+            f'{100*np.mean((edge <= self.SETTLE_TOL) & (shape <= self.SHAPE_TOL)):.1f}%',
+            '    (sample fraction, not a sustained tracking-success test)',
+        ]
+        # Fit the fundamental after the ramp. Irregular receipt times are
+        # supported; resets or missing intervals invalidate a lag estimate.
+        rt = rows[:, c['reference_time']]
+        full_rt = data[:, c['reference_time']]
+        steps = np.diff(rt)
+        positive = steps[steps > 1e-8]
+        contiguous = (len(positive) > 0 and np.all(steps >= 0)
+                      and np.all(np.diff(full_rt[np.isfinite(full_rt)]) >= 0)
+                      and steps.max() <= 3 * np.median(positive) + 1e-8
+                      and steady[np.flatnonzero(steady)[0]:
+                                 np.flatnonzero(steady)[-1] + 1].all())
+        if not contiguous or rt[-1] - rt[0] < self.breathing.period:
+            return out + ['    scale lag/amplitude fit requires a continuous full cycle;',
+                          '    trim to a single run after its ramp.']
+        phase = 2 * np.pi * (rt - self.breathing.delay) / self.breathing.period
+        design = np.column_stack([np.ones(len(rt)), np.sin(phase), np.cos(phase)])
+        coeff, _, rank, _ = np.linalg.lstsq(design, rows[:, c['actual_scale']], rcond=None)
+        if rank == 3:
+            amplitude = math.hypot(coeff[1], coeff[2])
+            out.append(f'    scale amplitude / target  {amplitude/self.breathing.amplitude:.3f}')
+            if amplitude > 1e-8:
+                lag = -math.atan2(coeff[2], coeff[1]) * self.breathing.period / (2*np.pi)
+                out.append(f'    scale phase lag           {lag:.3f} s '
+                           '(positive = behind; modulo one cycle)')
+        return out
+
+
 class GenericMetrics(MetricSet):
     """Fallback: positions and pairwise distances, for algorithms without a
     dedicated metric set. Enough to reconstruct most things after the fact."""
@@ -1361,6 +1465,14 @@ class MetricsRecorder(Node):
         self.algo = algo_cfg.get('name', 'Unknown')
         self.metrics = make_metrics(self.algo, self.ids,
                                     algo_cfg.get('params', {}) or {})
+        self._breathing = (isinstance(self.metrics, DistanceFormationMetrics)
+                           and self.metrics.ok and self.metrics.breathing.enabled)
+        self._distance_reference = (float('nan'), float('nan'))
+        self._distance_reference_received = float('-inf')
+        if self._breathing:
+            self.create_subscription(Float64MultiArray, '/distance_formation/reference',
+                                     self._distance_reference_cb, 10)
+            self.create_subscription(Int32, '/sim/control', self._control_cb, 10)
         self._phase = {i: float('nan') for i in self.ids}
         self._phase_time = {i: float('-inf') for i in self.ids}
         self._state_time = {i: float('-inf') for i in self.ids}
@@ -1431,6 +1543,14 @@ class MetricsRecorder(Node):
                       if isinstance(self.metrics, KuramotoMetrics)
                       else self.metrics.all_columns()),
                      rate, notes=self._notes)
+        if self._breathing:
+            self._fh.write(
+                '# Breathing: reference_time/scale come from the controller.\n'
+                '# Latest receipt-time samples, not source-time synchronized.\n'
+                '# reference_valid requires matching schedule, reference/state ages <= 0.5s.\n'
+                '# Missing/stale references produce nan errors, not a static fallback.\n'
+                '# actual_scale fits all edge lengths to nominal edge lengths.\n')
+            self._fh.flush()
         if isinstance(self.metrics, KuramotoMetrics):
             self._fh.write(
                 '# Kuramoto: phases radians; positions/errors metres; ages seconds.\n'
@@ -1476,9 +1596,18 @@ class MetricsRecorder(Node):
             self._phase[drone_id] = msg.data
             self._phase_time[drone_id] = self.get_clock().now().nanoseconds * 1e-9
 
+    def _distance_reference_cb(self, msg):
+        if len(msg.data) == 2:
+            self._distance_reference = tuple(msg.data)
+            self._distance_reference_received = self._now()
+
     def _control_cb(self, msg):
         self._active = msg.data == 1
+        if self._breathing and msg.data in (0, 2):
+            self._distance_reference = (float('nan'), float('nan'))
+            self._distance_reference_received = float('-inf')
         if msg.data == 2:
+            self._aborted = None
             self._phase_time = {i: float('-inf') for i in self.ids}
             self._state_time = {i: float('-inf') for i in self.ids}
 
@@ -1512,6 +1641,13 @@ class MetricsRecorder(Node):
                         f'motion detected at t = {self._moving_at:.1f}s')
             else:
                 self._moving_since = None
+
+        if self._breathing:
+            self.metrics.set_reference(
+                *self._distance_reference,
+                age=now - self._distance_reference_received,
+                max_state_age=(float('inf') if self._aborted else
+                               max(now - self._state_time[i] for i in self.ids)))
 
         if isinstance(self.metrics, KuramotoMetrics):
             row = self.metrics.row(t, pos, vel,
@@ -1658,6 +1794,10 @@ def reanalyse(path, cfg, t_from, t_to):
 
     expected = len(metrics.all_columns())
     if data.shape[1] != expected:
+        if isinstance(metrics, DistanceFormationMetrics) and metrics.breathing.enabled:
+            raise SystemExit('Breathing records require controller reference columns; '
+                             'use the exact config flown. Static records cannot be '
+                             're-scored as breathing runs.')
         # Older records are still worth reading. The columns have only ever
         # grown at the end -- per-drone x/y, then z -- so a file short by whole
         # per-drone blocks is an earlier layout, not a mismatched config. Pad
@@ -1788,7 +1928,9 @@ def main():
     alias = dict(zip(mocap, hw))
     if alias:
         notes.append('real drones ' + ', '.join(f'{h}=VICON {m}' for m, h in alias.items()))
-    twin = installed_config(a.config)
+    # fly.sh passes an absolute source path to BOTH launch and recorder. That
+    # launch does not use the installed YAML, even when a stale twin exists.
+    twin = None if os.path.isabs(a.config) else installed_config(a.config)
     if twin and os.path.realpath(twin) != os.path.realpath(a.config):
         with open(twin) as f:
             installed = yaml.safe_load(f)

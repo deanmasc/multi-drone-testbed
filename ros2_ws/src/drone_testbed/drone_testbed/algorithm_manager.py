@@ -22,6 +22,7 @@ from std_srvs.srv import Empty
 from drone_testbed.utils.types import DroneState, ControlOutput
 from drone_testbed.utils.config_loader import load_config
 from drone_testbed.algorithms.registry import get_algorithm, list_algorithms
+from drone_testbed.algorithms.distance_formation import DistanceFormation
 import drone_testbed.algorithms  # triggers registration
 
 
@@ -78,6 +79,10 @@ class AlgorithmManagerNode(Node):
 
         # Algorithm status publisher
         self._algo_status_pub = self.create_publisher(String, '/sim/algorithm_status', 10)
+        # The reference used at each tick, not the recorder's independent clock.
+        # NaN on reset/switch invalidates the preceding experiment's reference.
+        self._distance_ref_pub = self.create_publisher(
+            Float64MultiArray, '/distance_formation/reference', 10)
 
         # Load initial algorithm
         algo_cfg = self._config.get('algorithm', {})
@@ -116,6 +121,7 @@ class AlgorithmManagerNode(Node):
     def _load_algorithm(self, name: str, params: dict):
         self._algorithm = get_algorithm(name)
         self._algorithm.configure(params, self._drone_ids)
+        self._invalidate_distance_reference()
         self.get_logger().info(f'Loaded algorithm: {name}')
 
         status_msg = String()
@@ -133,6 +139,10 @@ class AlgorithmManagerNode(Node):
             return  # Wait for all drones to report state
 
         controls = self._algorithm.compute_controls(self._states, self._dt)
+        if isinstance(self._algorithm, DistanceFormation):
+            reference = Float64MultiArray()
+            reference.data = list(self._algorithm.reference())
+            self._distance_ref_pub.publish(reference)
 
         for drone_id, ctrl in controls.items():
             if drone_id in self._cmd_pubs:
@@ -144,6 +154,11 @@ class AlgorithmManagerNode(Node):
                 pos_msg = Float64MultiArray()
                 pos_msg.data = ctrl.setpoint_to_flat()
                 self._pos_pubs[drone_id].publish(pos_msg)
+
+    def _invalidate_distance_reference(self):
+        msg = Float64MultiArray()
+        msg.data = [float('nan'), float('nan')]
+        self._distance_ref_pub.publish(msg)
 
     def _auto_start(self):
         if not self._started:
@@ -167,6 +182,7 @@ class AlgorithmManagerNode(Node):
     def _reset_callback(self, request, response):
         self._started = False
         self._algorithm.reset()
+        self._invalidate_distance_reference()
 
         # Tell all drones to reset
         msg = Int32()
