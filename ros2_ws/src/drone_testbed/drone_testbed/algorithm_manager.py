@@ -16,7 +16,7 @@ Services:
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Float64MultiArray, Int32, String
+from std_msgs.msg import Float64MultiArray, Float64, Int32, String
 from std_srvs.srv import Empty
 
 from drone_testbed.utils.types import DroneState, ControlOutput
@@ -61,7 +61,11 @@ class AlgorithmManagerNode(Node):
         # algorithms. crazyflie_node prefers it over integrating cmd_accel;
         # drone_node (simulation) ignores it entirely.
         self._pos_pubs = {}
+        self._phase_pubs = {}
         for drone_id in self._drone_ids:
+            self._phase_pubs[drone_id] = self.create_publisher(
+                Float64, f'/{drone_id}/phase', 10,
+            )
             self._cmd_pubs[drone_id] = self.create_publisher(
                 Float64MultiArray,
                 f'/{drone_id}/cmd_accel',
@@ -144,6 +148,10 @@ class AlgorithmManagerNode(Node):
                 pos_msg = Float64MultiArray()
                 pos_msg.data = ctrl.setpoint_to_flat()
                 self._pos_pubs[drone_id].publish(pos_msg)
+
+        for drone_id, phase in self._algorithm.get_phases().items():
+            if drone_id in self._phase_pubs:
+                self._phase_pubs[drone_id].publish(Float64(data=float(phase)))
 
     def _auto_start(self):
         if not self._started:

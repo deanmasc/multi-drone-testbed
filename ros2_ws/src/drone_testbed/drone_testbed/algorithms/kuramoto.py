@@ -1,14 +1,15 @@
 """Kuramoto-coupled rotating ring formation for double-integrator agents.
 
-Each local controller owns one phase and consumes only self/neighbor state.
-The BaseAlgorithm adapter is for standalone numerical simulation; ROS launches
-use separate local controllers, never this all-agent adapter.
+Each local agent owns one phase and consumes only self/neighbor state.
+The shared algorithm manager steps all agents from one phase snapshot, just
+as it evaluates the other consensus laws, and publishes acceleration commands.
 """
 import math
 import numpy as np
 
 from .base_algorithm import BaseAlgorithm
 from .registry import register_algorithm
+from .trochoidal_consensus import _weighted
 from drone_testbed.utils.types import ControlOutput
 
 
@@ -19,12 +20,16 @@ class KuramotoAgent:
         self.drone_id = drone_id
         index = drone_ids.index(drone_id)
         graph = params.get('adjacency')
-        self.neighbors = list(graph.get(drone_id, [])) if graph is not None else list(dict.fromkeys(
+        neighbors = graph.get(drone_id, []) if graph is not None else list(dict.fromkeys(
             d for d in (drone_ids[(index - 1) % len(drone_ids)],
                         drone_ids[(index + 1) % len(drone_ids)]) if d != drone_id))
-        if len(set(self.neighbors)) != len(self.neighbors) or any(
-                d == drone_id or d not in drone_ids for d in self.neighbors):
+        if len(set(neighbors)) != len(neighbors) or any(
+                d == drone_id or d not in drone_ids for d in neighbors):
             raise ValueError('neighbors must be unique known IDs excluding self')
+        self.weights = _weighted(neighbors)
+        if any(not math.isfinite(w) or w < 0 for w in self.weights.values()):
+            raise ValueError('adjacency weights must be finite and nonnegative')
+        self.neighbors = list(self.weights)
         # Phase is the physical orbital angle. Subtract the assigned polygon
         # offset before coupling so synchronization preserves equal spacing.
         self.phase_offsets = {d: 2 * math.pi * i / len(drone_ids)
@@ -56,7 +61,7 @@ class KuramotoAgent:
             raise ValueError('dt must be positive and finite')
         own_offset = self.phase_offsets[self.drone_id]
         phase_rate = self.omega + self.phase_gain * sum(
-            math.sin((neighbor_phases[d] - self.phase_offsets[d])
+            self.weights[d] * math.sin((neighbor_phases[d] - self.phase_offsets[d])
                      - (self.phase - own_offset))
             for d in self.neighbors if d in neighbor_phases)
         # Check the physical orbital angle on every step. A lagging drone slows
@@ -79,7 +84,8 @@ class KuramotoAgent:
                 neighbor_target = self.center + self.radius * np.array([
                     math.cos(angle), math.sin(angle)])
                 desired_offset = neighbor_target - target
-                relative_error += neighbor_states[d].position - state.position - desired_offset
+                relative_error += self.weights[d] * (
+                    neighbor_states[d].position - state.position - desired_offset)
         # Centripetal feedforward removes the steady circular tracking bias.
         # Tangential acceleration during phase convergence is handled by feedback.
         accel = (-self.radius * phase_rate**2 * radial
@@ -95,19 +101,39 @@ class KuramotoAgent:
 
 @register_algorithm
 class KuramotoFormation(BaseAlgorithm):
-    """Synchronous simulation adapter around independent local agents."""
+    """Shared-manager adapter around neighbor-coupled local agents.
+
+    initialize_from_state starts each oscillator at its measured orbital angle.
+    Disable it to reproduce explicit initial_phases, including phase errors.
+    At the centre the angle is undefined, so the configured phase is retained.
+    Commands remain acceleration-only, matching TrochoidalConsensus.
+    """
     def name(self):
         return 'KuramotoFormation'
 
     def configure(self, params, drone_ids):
         self.agents = {d: KuramotoAgent(d, params, drone_ids) for d in drone_ids}
+        self._initialize_from_state = params.get('initialize_from_state', True)
+        self._initialized = set()
 
     def compute_controls(self, states, dt):
+        if not math.isfinite(dt) or dt <= 0:
+            raise ValueError('dt must be positive and finite')
+        for d, agent in self.agents.items():
+            if d in states and d not in self._initialized:
+                displacement = states[d].position - agent.center
+                if self._initialize_from_state and np.linalg.norm(displacement) > 1e-9:
+                    agent.phase = math.atan2(displacement[1], displacement[0]) % (2 * math.pi)
+                self._initialized.add(d)
         phases = {d: a.phase for d, a in self.agents.items()}
         return {d: a.step(states[d], {n: states[n] for n in a.neighbors if n in states},
-                          {n: phases[n] for n in a.neighbors}, dt)
+                          {n: phases[n] for n in a.neighbors if n in states}, dt)
                 for d, a in self.agents.items() if d in states}
 
+    def get_phases(self):
+        return {d: a.phase for d, a in self.agents.items() if d in self._initialized}
+
     def reset(self):
+        self._initialized.clear()
         for agent in self.agents.values():
             agent.reset()

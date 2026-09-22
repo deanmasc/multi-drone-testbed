@@ -52,6 +52,10 @@ class BaseAlgorithm(ABC):
         """
         ...
 
+    def get_phases(self) -> Dict[str, float]:
+        """Optional oscillator telemetry, published by the shared manager."""
+        return {}
+
     def reset(self) -> None:
         """Optional: reset internal state (called on algorithm swap or sim reset)."""
         pass
