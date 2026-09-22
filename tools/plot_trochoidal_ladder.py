@@ -49,6 +49,10 @@ EDGE = 1.3        # m, end of the clean window
 PATTERN_HZ = 0.4  # below this is the designed pattern (fast lap 8-19 s)
 SHAKE_BAND = (0.6, 1.5)
 G = 9.81
+# Which agents were REAL. 15-16 Sep flew drone1 and drone4; from 22 Sep the
+# trochoidal rungs fly drone1 only. Override with --real when it differs,
+# because a simulated agent scored as real reports a delay and a wobble that
+# belong to the integrator, not to an aircraft.
 REAL = ('drone1', 'drone4')
 
 INK = '#1f2328'
@@ -605,8 +609,15 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--r6', help='the 15 Sep rescale-6 record, until it is added to RUNS')
     ap.add_argument('--out', default=os.path.join(ROOT, 'docs', 'figures', 'trochoidal_ladder'))
+    ap.add_argument('--real', default=None,
+                    help="comma-separated ids flown as real hardware "
+                         "(default drone1,drone4)")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
+    if a.real:
+        REAL_ids = tuple(x.strip() for x in a.real.split(','))
+        globals()['REAL'] = REAL_ids
+        print(f'  real drones: {", ".join(REAL_ids)}')
     runs = []
     for label, rec, cfgname in RUNS:
         rec = a.r6 if label == 'r6' and a.r6 else rec

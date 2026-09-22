@@ -1,0 +1,105 @@
+# VARIANT of testbed_fig4.yaml: rescale 1, filling in the trochoidal ladder
+# (docs/PROJECT_AIM.md section 15f). Identical to testbed_fig4.yaml except the
+# gains -- every comment in that file applies, read it before flying.
+#
+# THE LADDER SO FAR. beta x delay (tau = 0.28 s) predicts whether the ~1.1 s
+# delay oscillation appears: quiet at 0.56 (r2) and 0.84 (r3, decaying bursts),
+# sustained at 1.68 (r6), 2.80 (r10), 3.92 (r14). Coverage put the threshold
+# tighter still -- severe at k.tau = 1.01, quiet at 0.67 (section 15f). This
+# rung sits at:
+#
+#   beta x delay here: 1 x 0.28 = 0.28      -- the quietest rung the ladder can reach
+#
+# WHY THIS EXISTS. rescale 1 IS THE PAPER'S OWN DESIGN: alpha 0.0506 and
+# kappa 0.0091 reproduce the published Fig-4 gains (0.05063, 0.00908) to four
+# significant figures. So this flight asks the most direct question available:
+# does the paper, flown exactly as published, hold up on this hardware?
+#
+# It also sits below k.tau = 1/e = 0.37, and for a pure delayed brake that is
+# the point where the oscillatory mode stops existing at all -- the response
+# is a plain exponential with no ringing available at any amplitude. Predict
+# the quietest flight yet, below r2's 1.0-1.2 cm.
+#
+# THE CATCH, MEASURED. The paper's own timescale is slower than the platform's
+# endurance: the slow period is 380.8 s and a battery gives ~250 s. Simulating
+# this file for 250 s and running the standard two-mode fit over it returns
+# slow periods of 1334-4002 s (design 380.8), fast periods of 105-127 s
+# (design 114.2), period ratios of 10-38 (design 3.33) and a spurious
+# "diverging envelope" on one agent. NONE of that is a property of the design
+# -- it is what a two-mode fit does when it sees two thirds of one cycle of
+# the slower mode. The fit is unidentifiable at this timescale.
+#
+# So treat r1 as answering ONE question: does the oscillation appear at
+# k.tau = 0.28? Wobble RMS, tilt, clipping and the measured delay are all
+# fine, because none of them needs the mode fit. Pattern fidelity -- periods,
+# ratio, growth per lap -- is NOT measurable here, and any number the script
+# prints for those should be ignored rather than reported.
+#
+# That limitation is itself the practical finding: the paper as published
+# cannot be validated on a Crazyflie, because one slow lap outlasts the
+# battery. Every rung above r1 exists to get the same pattern inside a flight.
+#
+# Design numbers (tools/design_consensus_gains.py --config
+# ros2_ws/src/drone_testbed/config/testbed_fig4.yaml --theta 2.28488
+# --rescale 1):
+#   periods 380.8 s and 114.2 s
+#   peak speed 0.013 m/s, peak accel 0.011 m/s^2, envelope 0.396 m
+#   flight_duration:=250.0  -> 2.2 fast laps
+#
+# max_accel stays 3.5, the same clamp as every other rung, so the ladder
+# differs only in speed. The design needs 0.011 m/s^2, so the clamp should
+# never engage unless the oscillation appears.
+#
+# ONE REAL DRONE. drone1 is the only real aircraft (VICON drone_1); drone2,
+# drone3 and drone4 are simulated and have no delay, which makes them the
+# control group inside the same flight. NOTE this differs from the 15-16 Sep
+# rungs (r2, r3, r6, r10, r14), which flew drone1 AND drone4 real. Replacing a
+# real neighbour with a perfect one removes a disturbance from the whole fleet,
+# so a like-for-like comparison against those rungs needs that caveat -- or a
+# bridging re-flight of one old rung with a single real drone.
+#
+#   ros2 launch drone_testbed hardware_hybrid.launch.py \
+#     config:=config/testbed_fig4_r1.yaml \
+#     hw_drone:=drone1 cf_name:=drone_1 mocap_name:=drone_1 \
+#     flight_duration:=250.0
+
+simulation:
+  dt: 0.1
+  control_rate: 10.0
+  sim_rate: 10.0
+  bounds: 1.5
+
+drones:
+  # Same marks as testbed_fig4.yaml. Fly drone1 and drone4 as the real pair --
+  # see SEPARATION in that file. Put VICON drone_1 on drone1's mark and drone_2
+  # on drone4's: on 15 Sep the two were swapped (section 13a).
+  - id: "drone1"
+    initial_position: [0.235, -0.132]
+    initial_velocity: [0.0, 0.0]
+    role: "leader"
+  - id: "drone2"
+    initial_position: [0.013, 0.070]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone3"
+    initial_position: [-0.186, -0.034]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone4"
+    initial_position: [0.179, 0.219]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+
+algorithm:
+  name: "TrochoidalConsensus"
+  params:
+    alpha: 0.0506
+    beta:  1.0000
+    kappa: 0.0091
+    theta: 2.2849
+    max_accel: 3.5
+    adjacency:
+      drone1: {drone3: 5.0}
+      drone2: {drone1: 3.0, drone3: 1.0}
+      drone3: {drone1: 1.0, drone4: 2.0}
+      drone4: {drone1: 1.0, drone2: 5.0}
