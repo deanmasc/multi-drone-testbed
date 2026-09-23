@@ -53,9 +53,12 @@ EXPERIMENT KNOBS (docs/PROJECT_AIM.md section 12), real drones only:
   velocity_window   samples in mocap_state_node's velocity fit (default 10)
   velocity_max_age  oldest sample that fit may use, seconds (default 0.25)
   mocap_noise       artificial Gaussian noise on VICON position, metres per
-                    axis (default 0 = off)
-None of these is in the config, so the recorder cannot see them. Give it the
-same values with metrics_recorder.py --note, so the record says what flew.
+                    axis. Default "config" = the algorithm's own mocap_noise
+                    key (absent means 0 = off), so the record header records
+                    which rung flew. A number overrides.
+velocity_window and velocity_max_age are not in the config, so the recorder
+cannot see them -- give it the same values with metrics_recorder.py --note.
+mocap_noise IS read from the config by default, so it lands in the header.
 """
 
 import os
@@ -106,6 +109,22 @@ def _accel_clamp(value, config):
     return float(params.get('max_accel', 0.5))
 
 
+def _mocap_noise(value, config):
+    """Artificial VICON position noise, metres per axis, for the REAL drones.
+
+    "config" means the algorithm's own mocap_noise, so the number in the yaml
+    is the number that flies and the recorder -- which dumps algorithm params
+    verbatim -- writes it into the record header. Without that the noise level
+    lives only in --note, which is the one piece of metadata a ladder cannot
+    afford to lose. Anything else is taken as metres. Same pattern as
+    _accel_clamp above.
+    """
+    if str(value).strip().lower() != 'config':
+        return float(value)
+    params = (config.get('algorithm', {}) or {}).get('params', {}) or {}
+    return float(params.get('mocap_noise', 0.0))
+
+
 def _launch_setup(context):
     cfg = lambda name: LaunchConfiguration(name).perform(context)
 
@@ -152,7 +171,7 @@ def _launch_setup(context):
     max_acc = _accel_clamp(cfg('max_acceleration'), config)
     window = int(cfg('velocity_window'))
     max_age = float(cfg('velocity_max_age'))
-    noise = float(cfg('mocap_noise'))
+    noise = _mocap_noise(cfg('mocap_noise'), config)
 
     print(f'[hardware_hybrid] acceleration clamp {max_acc} m/s^2 on every drone, '
           f'real and virtual (max_acceleration:={cfg("max_acceleration")})')
@@ -264,7 +283,7 @@ def generate_launch_description():
         DeclareLaunchArgument('max_acceleration', default_value='config'),
         DeclareLaunchArgument('velocity_window', default_value='10'),
         DeclareLaunchArgument('velocity_max_age', default_value='0.25'),
-        DeclareLaunchArgument('mocap_noise', default_value='0.0'),
+        DeclareLaunchArgument('mocap_noise', default_value='config'),
         # Must exceed takeoff, or the simulated drones fly the formation
         # without the real ones. Each real drone is its own process building
         # its own Crazyswarm client and taking off on its own clock, so the

@@ -49,6 +49,14 @@ plt.rcParams.update(C.RC)
 
 COV, FLK = '#eb6834', '#1baf7a'          # the palette plot_key.py validated
 SETTLE = 15.0                            # s of the window kept for the transient
+# C.window() ends at the last LIVE row, which is partway through the descent,
+# not at the end of the flight. The landing drags the drone tens of cm from
+# where the law wanted it and it is not flight behaviour, so the last TAIL_TRIM
+# seconds come off every record. Measured on the 23 Sep topology ladder: all
+# three runs put every excursion over 20 cm in their final 4-14 s, and trimming
+# takes the 6-edge run's 95th-percentile deviation from 69.3 cm to 7.1 cm
+# without moving any median by more than 1 mm.
+TAIL_TRIM = 12.0                         # s dropped off the end of every record
 
 LEVERS = {
     'coverage_hotspot': dict(
@@ -63,6 +71,21 @@ LEVERS = {
         runs=[('0.3', 'coverage_20260922_151551.txt', 'testbed_coverage_c2.yaml'),
               ('0.6', 'coverage_20260922_152013.txt', 'testbed_coverage_c2_h06.yaml'),
               ('0.9', 'coverage_20260922_152611.txt', 'testbed_coverage_c2_h09.yaml')],
+    ),
+    'flocking_topology': dict(
+        algo='Flocking', duration=200.0, promise='lattice_err', colour=FLK,
+        lever='sense_range', unit='m', axis='sense range (m)',
+        title='Flocking: three neighbour graphs at the same delay margin',
+        # gain_c2_alpha differs per rung ON PURPOSE -- it is set to hold
+        # k = 1.90 and k*tau = 0.53 while the edge count changes, because
+        # k = c2_gamma + c2_alpha * sum_j bump_ij rises with the edge count on
+        # its own. See the config headers.
+        runs=[('0.78', 'flocking_20260923_143825.txt',
+               'testbed_flocking_hybrid_s2_g4.yaml'),
+              ('0.86', 'flocking_20260923_144348.txt',
+               'testbed_flocking_hybrid_s2_g5.yaml'),
+              ('1.05', 'flocking_20260923_145201.txt',
+               'testbed_flocking_hybrid_s2_g6.yaml')],
     ),
     'flocking_sense': dict(
         algo='Flocking', duration=150.0, promise='lattice_err', colour=FLK,
@@ -119,6 +142,8 @@ def analyse(label, rec_name, cfgname, spec, offs):
         return None
     w = C.window(rec, P)
     sl = w['sl']
+    k1 = int(np.searchsorted(rec['t'], rec['t'][w['k1']] - TAIL_TRIM))
+    sl = slice(sl.start, max(k1, sl.start + 1))
     Pw = P[sl]
     t = rec['t'][sl] - rec['t'][sl][0]
     period = reference_period(rec['params'], spec['algo'])
@@ -180,6 +205,17 @@ def analyse(label, rec_name, cfgname, spec, offs):
             out['side' + tag] = float(np.mean(d[-300:, :4]))
             out['diag' + tag] = float(np.mean(d[-300:, 4:]))
         out['spacing'] = float(rec['params']['spacing'])
+        # How many of the six pairs are actually inside the sense range. This
+        # is the thing the topology ladder sets, and it is worth measuring
+        # rather than assuming: a pair sitting within a centimetre of the range
+        # flickers in and out, which shows up as a fractional edge count.
+        r = float(rec['params']['sense_range'])
+        dh = np.stack([C.col(rec, c)[sl] for c in rec['cols']
+                       if c.startswith('d_drone')], 1)[-400:]
+        dsm = np.stack([C.col(sim, c) for c in sim['cols']
+                        if c.startswith('d_drone')], 1)[-400:]
+        out['edges'] = float((dh < r).sum(1).mean())
+        out['edges_sim'] = float((dsm < r).sum(1).mean())
     return out
 
 
@@ -415,6 +451,63 @@ def fig_topology(runs, spec, out, flown=(0.78, 0.73), planned=(0.78, 0.86, 1.05)
     return sw
 
 
+def fig_topology_result(runs, spec, out):
+    """The topology ladder: did the graph change, and did anything follow."""
+    fig, ax = plt.subplots(1, 3, figsize=(13.4, 4.6))
+    fig.subplots_adjust(wspace=0.32)
+    cc = spec['colour']
+    xs = np.arange(len(runs))
+    names = [f"{r['label']} m\n{int(round(r['edges_sim']))} edges" for r in runs]
+
+    # 1 -- the ladder did set the graph it was meant to set
+    a = ax[0]
+    a.bar(xs - 0.20, [r['edges'] for r in runs], 0.38, color=cc,
+          label='hardware', zorder=2)
+    a.bar(xs + 0.20, [r['edges_sim'] for r in runs], 0.38, color=C.SIM,
+          label='simulation', zorder=2)
+    for k, r in enumerate(runs):
+        a.annotate(f"{r['edges']:.2f}", (k - 0.20, r['edges']),
+                   textcoords='offset points', xytext=(0, 3), ha='center',
+                   fontsize=7.5, color=C.INK)
+    a.set_xticks(xs)
+    a.set_xticklabels(names)
+    a.set_ylim(0, 7.4)
+    a.set_yticks([0, 2, 4, 6])
+    a.set_ylabel('pairs inside the sense range (of 6)')
+    a.set_title('Edges in the neighbour graph')
+
+    # 2 -- the result
+    a = ax[1]
+    _pair_bars(a, runs, 'promise', cc, 'hardware')
+    a.set_xticklabels(names)
+    a.set_ylabel('distance from the α-lattice the law asks for (m)')
+    a.set_title('Lattice error')
+    a.set_ylim(0, 0.175)
+    a.legend(fontsize=8, loc='upper left')
+
+    # 3 -- and the delay margin did NOT move, which is what makes 2 readable
+    a = ax[2]
+    a.bar(xs, [r['k_tau'] for r in runs], 0.45, color=C.DESIGN, zorder=2)
+    for k, r in enumerate(runs):
+        a.annotate(f"{r['k_tau']:.2f}", (k, r['k_tau']),
+                   textcoords='offset points', xytext=(0, 4), ha='center',
+                   fontsize=8.5, color=C.INK)
+    a.axhline(0.53, color=C.INK, ls='--', lw=1.3, zorder=3)
+    a.annotate('designed: k·τ 0.53 at every rung', (0.02, 0.93),
+               xycoords='axes fraction', ha='left', fontsize=8, color=C.INK)
+    a.set_xticks(xs)
+    a.set_xticklabels([f"{r['label']} m\nripple {r['wobble'] * 100:.2f} cm"
+                       for r in runs])
+    a.set_ylim(0, 0.95)
+    a.set_ylabel('k·τ   (own-velocity gain × loop delay)')
+    a.set_title('The delay margin was held fixed')
+
+    fig.suptitle('Flocking: three neighbour graphs, one delay margin',
+                 y=1.02, fontsize=12, fontweight='bold')
+    fig.savefig(os.path.join(out, '1_topology.png'))
+    plt.close(fig)
+
+
 def rung_name(r, unit, sep=' · '):
     """'0.3 rad/s · 16 Sep' -- the unit belongs to the value, not to the date."""
     parts = r['label'].split('\n')
@@ -533,6 +626,8 @@ def main():
         table(runs, spec)
         if spec['algo'] == 'Coverage':
             fig_coverage(runs, spec, out)
+        elif key == 'flocking_topology':
+            fig_topology_result(runs, spec, out)
         else:
             fig_topology(runs, spec, out)
             fig_flocking(runs, spec, out)

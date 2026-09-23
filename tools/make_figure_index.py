@@ -44,6 +44,10 @@ LEVER_SECTIONS = [
          blurb='Coverage at three hotspot speeds, gains untouched, all flown '
                '22 Sep. k·τ is 0.67 in every run, so anything that changes here '
                'is the task getting harder, not the delay margin moving.'),
+    dict(key='flocking_topology', name='Graph topology', accent='#1f8a63',
+         blurb='Flocking at three neighbour-graph topologies — 4, 5 and 6 edges '
+               '— flown 23 Sep with gain_c2_alpha set per rung so k·τ stays at '
+               '0.53. The graph changes; the delay margin does not.'),
     dict(key='flocking_sense', name='Sense range', accent='#1f8a63',
          blurb='A NULL RESULT, kept for the reason it failed. Both rungs turned '
                'out to be the same neighbour graph, so there was nothing there '
@@ -67,6 +71,22 @@ CAPTIONS = {
         'flight, so a run that is usually fine and occasionally bad cannot hide '
         'behind its median. 4 cm at 0.3 rad/s, 13 cm at 0.9, with the 95th '
         'percentile reaching 46 cm.'),
+    'flocking_topology/1_topology.png': (
+        'Three graphs, one delay margin',
+        'Left: the ladder set the graph it was designed to set — 4.17, 5.14 and '
+        '5.99 of the six possible pairs inside the sense range, against 4, 5 '
+        'and 6 in simulation (the fractions are pairs sitting within a '
+        'centimetre of the range, flickering in and out). Middle: the lattice '
+        'is TIGHTEST at five edges, not six — the non-monotone result predicted '
+        'from simulation, now confirmed on hardware. Right: k·τ held at '
+        '0.49–0.53 throughout, which is what makes the middle panel readable as '
+        'a topology effect rather than a delay effect.'),
+    'flocking_topology/3_design_vs_actual.png': (
+        'Graph topology: distance from the designed position',
+        'All three rungs track their own design to 5–6 cm median with a 7–9 cm '
+        '95th percentile. Changing the neighbour graph does not change how '
+        'faithfully the real drone follows the law — it changes what the law '
+        'converges to.'),
     'flocking_sense/0_why_null.png': (
         'Why this sweep found nothing',
         'A 4-drone diamond has six possible edges — four sides and two '

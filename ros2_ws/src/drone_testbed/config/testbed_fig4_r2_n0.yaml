@@ -1,0 +1,102 @@
+# TROCHOIDAL MEASUREMENT-NOISE LADDER, rung 1 of 4: 0 mm per axis.
+#
+# WHY THIS LEVER AND NOT ANOTHER. Two different questions are being asked of
+# these ladders and they do not have the same answer.
+#
+#   "Does performance degrade as we move away from theory?"  The hotspot-speed
+#   sweep answered this cleanly: the drone went from 4 cm off its designed
+#   position at 0.3 rad/s to 13 cm at 0.9 (PROJECT_AIM 15j). That lever worked.
+#
+#   "Does the gap between HARDWARE and SIMULATION widen?"  No sweep so far has
+#   moved it: hotspot speed <=1%, sense range 0.0%, graph topology <=1.6%.
+#
+# The second question is the project's own (PROJECT_AIM 1), and the reason none
+# of those levers touches it is that each is a parameter INSIDE the control
+# law. Change what the law asks for and the hardware still does it, because
+# simulation runs the same law and degrades by the same amount. A lever can
+# only open a hardware gap where the model is wrong about the PHYSICS -- delay,
+# sampling, saturation or measurement.
+#
+# This one is measurement. mocap_state_node adds Gaussian noise of
+# position_noise_std metres per axis to the VICON position of the REAL drones
+# only; the simulated agents keep perfect state and are the control group in
+# every flight, as usual.
+#
+# WHAT IT ATTACKS. The same term k*tau attacks. Every law's commanded
+# acceleration carries a brake -k*v; k*tau says that v is 0.28 s stale, and
+# this ladder says it is also WRONG. The velocity is not measured, it is fitted
+# -- mocap_state_node least-squares fits 10 samples over ~0.1 s at 100 Hz -- and
+# a least-squares slope amplifies position noise by
+#
+#       sqrt(12 / (n(n^2-1))) / delta  =  11x   at n = 10, delta = 0.01 s
+#
+# so 0 mm on position becomes 0 mm/s on velocity, against a median
+# flight speed of about 20 mm/s at this rung's gains. The brake term multiplies
+# that by beta, so the noise reaches the command amplified by 11*beta = 22.
+#
+# BASE CONFIG is testbed_fig4_r2.yaml, beta = 2, unchanged: k*tau 0.56, which
+# is quiet (1.0-1.2 cm ripple, 0% clipped, 16 Sep). Starting quiet means any
+# degradation is the noise and not the delay.
+#
+# PREDICTED, from 180 s of the law integrated with noise injected into the
+# state the real drone sees, 3 seeds:
+#
+#       deviation from the noiseless pattern   0 cm (this is the control)
+#       ripple                                 0.00 cm
+#       peak speed 0.02 m/s (cap 0.7)   peak |u| 0.04 m/s^2 (clamp 3.5)
+#       clipped 0% of ticks       max radius 0.32 m (geofence 1.5)
+#
+# READ THE PATTERN, NOT THE RIPPLE. The ripple is predicted to stay under
+# 0.5 cm until 10 mm, which is the hardware's own floor (PROJECT_AIM 15f), so
+# it will measure nothing. The pattern deviation moves 5x across the ladder and
+# is the benchmark for this experiment.
+#
+# ONE REAL DRONE (drone1). Fly 180 s -- the designed loop is 57 s, so ~3 laps.
+# The 0 mm rung is the control and MUST be flown in the same session: the one
+# thing the 22 Sep sweeps established is that cross-session comparison is worth
+# nothing.
+
+simulation:
+  dt: 0.1
+  control_rate: 10.0
+  sim_rate: 10.0
+  bounds: 1.5
+
+drones:
+  # Same marks as testbed_fig4.yaml. Fly drone1 and drone4 as the real pair --
+  # see SEPARATION in that file. Put VICON drone_1 on drone1's mark and drone_2
+  # on drone4's: on 15 Sep the two were swapped (section 13a).
+  - id: "drone1"
+    initial_position: [0.235, -0.132]
+    initial_velocity: [0.0, 0.0]
+    role: "leader"
+  - id: "drone2"
+    initial_position: [0.013, 0.070]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone3"
+    initial_position: [-0.186, -0.034]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone4"
+    initial_position: [0.179, 0.219]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+
+algorithm:
+  name: "TrochoidalConsensus"
+  params:
+    alpha: 0.2026
+    beta:  2.0000
+    kappa: 0.0364
+    theta: 2.2849
+    max_accel: 3.5
+    # Read by hardware_hybrid.launch.py (mocap_noise:=config, the
+    # default) and inert to the algorithm, which ignores unknown keys.
+    # It is here so the recorder writes it into the record header.
+    mocap_noise: 0.0
+    adjacency:
+      drone1: {drone3: 5.0}
+      drone2: {drone1: 3.0, drone3: 1.0}
+      drone3: {drone1: 1.0, drone4: 2.0}
+      drone4: {drone1: 1.0, drone2: 5.0}
