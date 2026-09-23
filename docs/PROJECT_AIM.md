@@ -1863,3 +1863,95 @@ the compensation.
 - **What these sweeps cannot say** is how much of any of it is run-to-run
   scatter, because each rung is still a single flight. That remains item 1 of
   15i, and it has to be answered inside one session to be worth anything.
+
+### 15k. Sensor noise: the first lever that widens the gap to simulation
+
+15j ends on a problem. The hotspot-speed lever moved the distance from theory
+convincingly — 4 cm to 13 cm median — but it did not move the distance from
+*simulation*, which stayed inside 1.1% at every rung. On reflection that was
+guaranteed rather than disappointing: `hotspot_speed`, `sense_range` and the
+graph topology are all parameters **inside the control law**, and the simulator
+runs the same parameter from the same file. A lever of that kind cannot open a
+hardware-vs-simulation gap by construction. Only a lever in the *physical
+layer* — delay, sampling, saturation, measurement — can.
+
+Measurement is the cheapest of those to vary, so on 23 Sep the trochoidal r2
+config (β = 2, k·τ 0.56, clamp 3.5) was flown four times with zero-mean Gaussian
+noise added to drone1's VICON position: **0 (control), 2, 5 and 10 mm per axis**.
+One session, drone1 the only real aircraft, 180 s each, everything else
+byte-identical. The level is a launch argument on `mocap_state_node`
+(`position_noise_std`); `hardware_hybrid.launch.py` now defaults it to `config`
+so the number is read from the yaml and the recorder writes it into the record
+header, where the analysis reads it back.
+
+Configs `testbed_fig4_r2_n0/n2/n5/n10.yaml`; records
+`trochoidalconsensus_20260923_15{2619,3238,4226,5129}.txt`; figures in
+`docs/figures/noise_ladder/`, built by `tools/plot_noise_ladder.py`. The window
+is a common 148 s starting 2 s after engage — common rather than each flight's
+own live end, because the deviation distributions are only comparable over the
+same number of laps, and because the descent (all four start it at ~185 s) has
+to be outside it. The 2 mm record also has ~30 s of the recorder running after
+touchdown.
+
+**The benchmark is deviation from the designed pattern**, where "designed" is
+the same config in the noiseless simulator, restarted from where the fleet
+actually was when the algorithm engaged. Because the simulator has no noise,
+that deviation *is* the sim-to-hardware gap this lever opens.
+
+| | 0 mm | 2 mm | 5 mm | 10 mm |
+|---|---|---|---|---|
+| Deviation from the designed pattern, RMS | 2.7 cm | 5.8 cm | 10.0 cm | **15.4 cm** |
+| … median | 2.5 cm | 4.9 cm | 9.4 cm | 9.1 cm |
+| … 95th percentile | 4.3 cm | 9.3 cm | 15.4 cm | **31.2 cm** |
+| … RMS over 1st / 2nd / 3rd third of the flight | 2.9 / 2.4 / 2.7 | 4.2 / 4.6 / 7.7 | 9.5 / 9.4 / 11.1 | 7.8 / 8.8 / **24.0** |
+| Simulated agents (drone2–4), RMS | 1.5 cm | 3.6 cm | 5.4 cm | 7.8 cm |
+| Oscillation radius, real drone | 0.55 cm | 0.66 cm | 0.93 cm | 1.36 cm |
+| Median flown speed | 0.035 m/s | 0.047 m/s | 0.068 m/s | 0.117 m/s |
+| Tilt, 95th percentile | 3.4° | 3.7° | 4.3° | 5.1° |
+| Command clipped | 0% | 0% | 0% | 0% |
+| Max radius from centre | 0.30 m | 0.36 m | 0.41 m | 0.53 m |
+
+What it says:
+
+- **Every measure rises monotonically with the noise**, and by a lot: RMS
+  deviation 5.7×, 95th percentile 7.3×, flown speed 3.3×. The designed pattern
+  has a median radius of 23 cm, so at 10 mm the drone is typically 72% of the
+  pattern's own size away from where the design put it. Dean's note from the
+  lab — "could tell the noise was affecting the flight, much more errored
+  movement" — is visible in `2_paths.png` without any statistics.
+- **The mechanism is amplification, not the noise itself.** 10 mm is small
+  against a 23 cm pattern. But `mocap_state_node` fits velocity by least
+  squares over `velocity_window` = 10 samples at ~100 Hz, and the slope of such
+  a fit has SD σ·√(12/(n(n²−1)))/Δ = **11σ**; the brake term then multiplies by
+  β = 2. So 10 mm of position noise arrives at the commanded acceleration as
+  roughly **22 times** its size. The drone is chasing its own measurement error.
+- **The error accumulates within a flight.** The control is flat across the
+  three thirds (2.9 / 2.4 / 2.7 cm); every noisy rung grows, and 10 mm triples
+  (7.8 → 24.0 cm). Noise does not merely add jitter around the designed path —
+  it de-phases the flown pattern from the designed one progressively.
+- **It leaks through the coupling.** Only drone1's sensor is noisy, but the
+  three simulated agents also drift from their design, 1.5 → 7.8 cm, because
+  drone1's corrupted position enters their κ·R(θ)·Σ term. The noise is not
+  contained to the agent that has it.
+- **This is not the k·τ mechanism.** The command never clipped, the oscillation
+  radius stays near the ~0.5 cm hardware floor even at its worst (1.36 cm
+  against 16.6 cm at r4 on the β ladder), and k·τ is 0.56 in all four flights.
+  Wobble is the wrong metric for this lever, and a ladder scored on it would
+  have read as a null result. Pattern deviation is the right one.
+- **Altitude degrades as a consequence, and only at the top rung.** Over the
+  last 40 s of cruise (140–182 s) the altitude SD is 3.5 / 4.2 / 4.2 / **24.0**
+  mm, with the 10 mm rung dipping to 0.766 m against its 0.912 m mean. The
+  noise is injected on x and y only, so this is second-order: the aircraft is
+  working harder in plane, tilting more, and altitude hold pays for it. It is
+  also the practical ceiling on this lever — a 20 mm rung would be testing the
+  altitude controller as much as the planar law.
+
+This is the answer to the open question at the end of 15j. Levers inside the
+control law move the distance from theory; a lever in the physical layer moves
+the distance from simulation as well. Both belong in the write-up, and they are
+answering different questions.
+
+*Caveat, unchanged from 15j:* every rung is still a single flight, so none of
+these differences has an error bar. The ladder is steep enough that scatter is
+unlikely to explain it — 2.7 to 15.4 cm is not a plausible session wobble — but
+repeats inside one session remain item 1 of 15i.

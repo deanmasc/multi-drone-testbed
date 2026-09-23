@@ -48,6 +48,13 @@ LEVER_SECTIONS = [
          blurb='Flocking at three neighbour-graph topologies — 4, 5 and 6 edges '
                '— flown 23 Sep with gain_c2_alpha set per rung so k·τ stays at '
                '0.53. The graph changes; the delay margin does not.'),
+    dict(key='noise_ladder', name='Sensor noise', accent='#2a6ca8',
+         blurb='Trochoidal at β = 2 with artificial Gaussian noise added to '
+               'drone1\'s VICON position — 0 (control), 2, 5 and 10 mm per '
+               'axis, all four flown 23 Sep. Every other lever so far has been '
+               'a parameter inside the control law, which cannot widen the '
+               'gap to simulation by construction. This one is a property of '
+               'the hardware, and it does.'),
     dict(key='flocking_sense', name='Sense range', accent='#1f8a63',
          blurb='A NULL RESULT, kept for the reason it failed. Both rungs turned '
                'out to be the same neighbour graph, so there was nothing there '
@@ -56,6 +63,29 @@ LEVER_SECTIONS = [
 ]
 
 CAPTIONS = {
+    # --- measurement noise (23 Sep) ----------------------------------------
+    'noise_ladder/1_deviation.png': (
+        'Sensor noise: distance from the designed position',
+        'Left: how far drone1 was from where the noiseless design put it, at '
+        'every moment of four otherwise identical flights. Right: the same '
+        'distance as a distribution, so a run that is usually fine and '
+        'occasionally bad cannot hide behind its median. RMS deviation runs '
+        '2.7 / 5.8 / 10.0 / 15.4 cm, and the 95th percentile 4.3 / 9.3 / 15.4 '
+        '/ 31.2 cm. The control is flat across the flight; the noisy rungs '
+        'drift further out the longer they fly.'),
+    'noise_ladder/2_paths.png': (
+        'Sensor noise: the flown path against the designed one',
+        'The same four flights seen from above, grey the noiseless simulation '
+        'of the same config. The pattern is recognisable at 2 mm, ragged at '
+        '5 mm and barely a trochoid at 10 mm, where the RMS deviation is 72% '
+        'of the 23 cm pattern radius.'),
+    'noise_ladder/3_what_changed.png': (
+        'Sensor noise: four measures of the same flights',
+        'Pattern deviation, oscillation radius, flown speed and tilt all rise '
+        'monotonically with the noise. The drone chases its own measurement '
+        'error: the least-squares velocity fit multiplies position noise by '
+        '11, the brake multiplies that by β, so 10 mm of position noise '
+        'reaches the command as roughly 22 times its size.'),
     # --- levers (22 Sep) ----------------------------------------------------
     'coverage_hotspot/1_hotspot_speed.png': (
         'Hotspot speed: oscillation, lag and cost',
@@ -197,9 +227,20 @@ def _num(key, rung, field, scale=1.0, fmt='{:.0f}'):
     return '—'
 
 
+def _ratio(key, rung, num, den):
+    """One summary.json field as a percentage of another, same rung."""
+    path = os.path.join(FIG, key, 'summary.json')
+    if not os.path.exists(path):
+        return '—'
+    d = json.load(open(path)).get(rung, {})
+    if num in d and d.get(den):
+        return f'{d[num] / d[den]:.0%}'
+    return '—'
+
+
 def key_cards():
     """The three or four figures that carry the finding, with what they show."""
-    g = lambda k, r, f, sc=1.0: _num(k, r, f, sc)
+    g = lambda k, r, f, sc=1.0, fmt='{:.0f}': _num(k, r, f, sc, fmt)
     return [
         ('key/1_threshold.png', 'The result, in one figure',
          'Eleven flights, three algorithms, three unrelated papers, plotted against '
@@ -224,6 +265,17 @@ def key_cards():
          f'{g("flocking_ladder", "s3", "design_gap")} cm at a third, and the settled '
          f'lattice error from +41% against simulation to −1% to −0.1%. The gap to '
          f'simulation did not shrink; it closed.'),
+        ('noise_ladder/1_deviation.png',
+         'The first lever that widens the gap to simulation',
+         f'Three earlier sweeps moved a parameter inside the control law and '
+         f'left the hardware-vs-simulation gap untouched, which in hindsight '
+         f'they had to: simulation runs the same parameter. Noise on the '
+         f'position sensor is a property of the aircraft instead, and it walks '
+         f'the drone from {g("noise_ladder", "0", "dev_rms", 100, "{:.1f}")} cm off '
+         f'the designed pattern to '
+         f'{g("noise_ladder", "10", "dev_rms", 100, "{:.1f}")} cm — '
+         f'{_ratio("noise_ladder", "10", "dev_rms", "design_r")} of the '
+         f'pattern\'s own radius — with every gain held fixed.'),
         ('trochoidal_ladder/8_design_vs_actual.png',
          'Trochoidal: where the ladder started',
          'The original finding, kept here for comparison: the designed pattern '
