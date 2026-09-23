@@ -45,9 +45,10 @@ LEVER_SECTIONS = [
                '22 Sep. k·τ is 0.67 in every run, so anything that changes here '
                'is the task getting harder, not the delay margin moving.'),
     dict(key='flocking_sense', name='Sense range', accent='#1f8a63',
-         blurb='Flocking at two sense ranges, gains and spacing untouched, both '
-               'flown 22 Sep. Shrinking the range takes neighbours out of the '
-               'graph without changing the spacing the law is asked to hold.'),
+         blurb='A NULL RESULT, kept for the reason it failed. Both rungs turned '
+               'out to be the same neighbour graph, so there was nothing there '
+               'to measure. The replacement ladder steps across graph '
+               'topologies at fixed k·τ (configs …_s2_g4/g5/g6.yaml).'),
 ]
 
 CAPTIONS = {
@@ -66,6 +67,16 @@ CAPTIONS = {
         'flight, so a run that is usually fine and occasionally bad cannot hide '
         'behind its median. 4 cm at 0.3 rad/s, 13 cm at 0.9, with the 95th '
         'percentile reaching 46 cm.'),
+    'flocking_sense/0_why_null.png': (
+        'Why this sweep found nothing',
+        'A 4-drone diamond has six possible edges — four sides and two '
+        'diagonals — and which of them exist depends on where the sense range '
+        'falls between the settled side (~0.57 m) and the settled diagonal '
+        '(~0.81 m). Both flown rungs land in the 4-edge band, so they are the '
+        'same graph squeezed slightly, and the algorithm refuses a sense range '
+        'below the 0.70 m spacing, so that band is only 0.70–0.80 m wide. The '
+        'lever should step ACROSS the bands instead, and the effect is not '
+        'monotone: the 5-edge graph holds the tightest lattice.'),
     'flocking_sense/1_sense_range.png': (
         'Sense range: spacing and oscillation',
         'Left: the distance the flock actually settled on between neighbouring '

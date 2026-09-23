@@ -1769,10 +1769,11 @@ built by `tools/plot_levers.py`.
 | … simulation of the same file | 0.1057 | 0.1110 | 0.1209 |
 | … gap | +0.1% | +0.6% | +1.1% |
 
-**Flocking — sense range, s2 gains and 0.70 m spacing throughout**
+**Flocking — sense range: A NULL RESULT, and why**
 
 | | 0.78 m | 0.73 m |
 |---|---|---|
+| Edges in the neighbour graph | **4 of 6** | **4 of 6** |
 | k (own-velocity gain) | 1.90 | 1.74 |
 | k·τ | 0.53 | 0.49 |
 | Oscillation radius, real drone | 0.41 cm | 0.54 cm |
@@ -1781,6 +1782,58 @@ built by `tools/plot_levers.py`.
 | … the law asks for | 0.70 m | 0.70 m |
 | Graph connected | 100% | 99.3% |
 | Distance from the designed position, median | 6 cm | 5 cm |
+
+The two rungs differ by a few percent on every row, and not consistently in the
+same direction — 0.78 is quieter but sits further from its designed position
+than 0.73. That is not a weak effect, it is **no effect**, and the reason is
+structural rather than anywhere in the data.
+
+A four-drone diamond has **six** possible edges: four sides and two diagonals.
+The flock settles with sides near 0.57 m and diagonals near 0.81 m, so which
+edges exist is decided by where the sense range falls *between those two
+numbers*, not by the sense range itself. In simulation:
+
+| sense range | edges | graph |
+|---|---|---|
+| ≥ 0.96 m | 6 | complete |
+| 0.81 – 0.95 m | 5 | the cycle plus one chord |
+| ≤ 0.80 m | 4 | the bare cycle |
+
+**Both flown rungs are in the 4-edge band**, so they are the same graph, lightly
+squeezed. Worse, that band has no room left: the algorithm refuses
+`sense_range ≤ spacing`, so the entire 4-edge regime is r ∈ (0.70, 0.80] and the
+sweep had already used most of it. There is no version of this lever, pointed
+downward, that would have found more.
+
+The graph also **cannot fragment at any legal sense range**, because the flock
+compresses to stay inside the radius — the settled side is always 0.13–0.26 m
+inside r. "Does connectivity break" was never a testable question here. That is
+the honest retraction of the prediction in 15c, which was wrong twice: first the
+simulation contradicted it, and now it is clear the lever could not have tested
+it either way.
+
+**The replacement: a graph-topology ladder at fixed k·τ.** Step *across* the
+bands rather than inside one, so each rung is a different graph:
+
+| config | sense range | edges | lattice error (sim) |
+|---|---|---|---|
+| `testbed_flocking_hybrid_s2_g4.yaml` | 0.78 m | 4 | 0.131 |
+| `testbed_flocking_hybrid_s2_g5.yaml` | 0.86 m | 5 | **0.098** |
+| `testbed_flocking_hybrid_s2_g6.yaml` | 1.05 m | 6 | 0.128 |
+
+It is **not monotone**: the 5-edge graph holds the tightest lattice and the
+complete graph is worse again. That is the thing worth flying.
+
+One thing this ladder cannot leave alone. The flocking law's own-velocity gain is
+`k = c2_gamma + c2_alpha · Σ_j bump_ij`, so **adding edges raises k by itself**.
+Left at `gain_c2_alpha: 1.0` the ladder would drag k·τ from 0.55 to 0.90 as the
+edge count rose, and any change in the lattice would be inseparable from the
+delay margin moving — precisely the confound 15a–15f exists to control. So
+`gain_c2_alpha` is set per rung (0.960 / 0.725 / 0.479) to hold **k = 1.90 and
+k·τ = 0.53 at every rung**. Verified in simulation, and verified not to disturb
+the geometry: `c2_alpha` is the velocity-*matching* gain, so it sets damping and
+not the equilibrium, and the lattice errors above are identical with and without
+the compensation.
 
 - **The fleet runs a fixed lag behind a moving reference, not a fixed angle.**
   Coverage trails the hotspot by about a second at every speed; tripling the
@@ -1797,19 +1850,16 @@ built by `tools/plot_levers.py`.
   shorter than simulation's, which is the same size as that ambiguity, so it
   should not be read as hardware leading simulation.
 - **The flock settles well short of the spacing it is told to hold**, at 0.575
-  and 0.562 m against 0.70 m, and shorter still as the sense range shrinks.
-  Simulation of the same file settles at 0.569 and 0.550 m, so this is the
-  control law's own behaviour and not a hardware limit.
-- **Shrinking the sense range does not fragment the flock — the second time
-  this prediction has been wrong.** 15c predicted the graph would flicker in and
-  out of connected; the simulation said it would not; hardware agrees with the
-  simulation, staying connected 99–100% of the flight. The flock compresses to
-  stay inside the shrinking radius rather than losing edges.
-- **Both levers widen the gap from *theory* without widening the gap from
-  *simulation*.** That is the point of the two sweeps taken together. k·τ is not
-  just one knob among several: it is the only one so far under which the
-  physical layer becomes the binding constraint. Everything these two levers
-  break, an ideal simulation breaks in the same way and by the same amount.
+  and 0.562 m against 0.70 m. Simulation of the same file settles at 0.569 and
+  0.550 m, so this is the control law's own behaviour and not a hardware limit —
+  the one thing the null sweep did establish.
+- **The coverage lever widens the gap from *theory* without widening the gap
+  from *simulation*.** Everything it breaks, an ideal simulation breaks in the
+  same way and by the same amount, to within 1%. On the evidence so far k·τ is
+  not one knob among several — it is the only one under which the physical layer
+  becomes the binding constraint. The flocking lever was meant to be the second
+  test of that claim and did not deliver one, so it rests on coverage alone
+  until the topology ladder flies.
 - **What these sweeps cannot say** is how much of any of it is run-to-run
   scatter, because each rung is still a single flight. That remains item 1 of
   15i, and it has to be answered inside one session to be worth anything.

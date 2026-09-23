@@ -315,6 +315,106 @@ def fig_flocking(runs, spec, out):
     plt.close(fig)
 
 
+def topology_sweep(cfgname, rs, secs=150.0, cache=None):
+    """Settled pairwise distances and edge count against sense range.
+
+    Which edges the graph has is decided by where r falls between the flock's
+    settled SIDE (~0.57 m) and its settled DIAGONAL (~0.81 m), not by r on its
+    own -- so two different r values inside the same band are the same graph.
+    """
+    import copy
+    import yaml
+    import sim_baseline as S
+    if cache and os.path.exists(cache):
+        with open(cache) as fh:
+            return json.load(fh)
+    base = yaml.safe_load(open(os.path.join(C.CFG, cfgname)))
+    out = []
+    for r in rs:
+        cfg = copy.deepcopy(base)
+        cfg['algorithm']['params']['sense_range'] = float(r)
+        metrics, ts, D, ph, _ = S.run(cfg, secs)
+        cols = metrics.all_columns()
+        m = ts > 0.7 * secs
+        d = np.stack([D[:, cols.index(c)] for c in cols
+                      if c.startswith('d_drone')], 1)[m]
+        pairs = sorted(float(v) for v in d.mean(0))
+        out.append(dict(r=float(r), pairs=pairs,
+                        edges=int(round(float((d < r).sum(1).mean()))),
+                        lattice=float(D[m, cols.index('lattice_err')].mean())))
+    if cache:
+        with open(cache, 'w') as fh:
+            json.dump(out, fh, indent=1)
+    return out
+
+
+def fig_topology(runs, spec, out, flown=(0.78, 0.73), planned=(0.78, 0.86, 1.05)):
+    """Why the 22 Sep sense-range sweep found nothing."""
+    sw = topology_sweep('testbed_flocking_hybrid_s2_r78.yaml',
+                        np.round(np.arange(0.72, 1.11, 0.03), 2),
+                        cache=os.path.join(out, 'topology_sweep.json'))
+    rs = np.array([x['r'] for x in sw])
+    P = np.array([x['pairs'] for x in sw])          # 6 sorted pair distances
+    edges = np.array([x['edges'] for x in sw])
+    latt = np.array([x['lattice'] for x in sw])
+    cc = spec['colour']
+
+    fig, ax = plt.subplots(1, 2, figsize=(11.6, 4.5))
+    fig.subplots_adjust(wspace=0.30)
+    BANDS = ((4, 0.70, 0.805, '4 edges\nthe bare cycle'),
+             (5, 0.805, 0.955, '5 edges\n+ one diagonal'),
+             (6, 0.955, 1.12, '6 edges\ncomplete'))
+
+    # A -- the graph only has three possible shapes, in bands of r
+    a = ax[0]
+    a.step(rs, edges, where='mid', color=cc, lw=2.2)
+    for n, lo, hi, lab in BANDS:
+        a.axvspan(lo, hi, color=C.GRID, alpha=0.5 if n % 2 else 0.22, zorder=0)
+        a.annotate(lab, ((lo + hi) / 2, 6.55), ha='center', fontsize=8,
+                   color=C.MUTED)
+    for r in flown:
+        a.plot([r], [4], 'v', ms=11, color=C.INK, zorder=4)
+    a.annotate('both rungs flown 22 Sep', (np.mean(flown), 4),
+               xytext=(0, -30), textcoords='offset points', ha='center',
+               fontsize=8.5, color=C.INK)
+    a.set_xlim(0.70, 1.12)
+    a.set_ylim(3.3, 7.0)
+    a.set_yticks([4, 5, 6])
+    a.set_xlabel('sense range (m)')
+    a.set_ylabel('edges in the neighbour graph (of 6)')
+    a.set_title('0.78 and 0.73 are the same graph')
+
+    # B -- and the effect available inside one band is small next to the effect
+    # available between bands
+    a = ax[1]
+    for n, lo, hi, _ in BANDS:
+        a.axvspan(lo, hi, color=C.GRID, alpha=0.5 if n % 2 else 0.22, zorder=0)
+    a.plot(rs, latt, color=cc, lw=2.0, zorder=2)
+    for r in flown:
+        a.plot([r], [np.interp(r, rs, latt)], 'v', ms=11, color=C.INK, zorder=4)
+    for r in planned:
+        a.plot([r], [np.interp(r, rs, latt)], 'o', ms=10, mfc='white', mew=2.2,
+               color=cc, zorder=4)
+    a.plot([], [], 'v', ms=9, color=C.INK, label='flown 22 Sep')
+    a.plot([], [], 'o', ms=9, mfc='white', mew=2.0, color=cc,
+           label='proposed: one per band')
+    a.legend(fontsize=8, loc='upper right')
+    a.annotate('0.78 is kept —\nit is the 4-edge rung',
+               (planned[0], np.interp(planned[0], rs, latt)),
+               xytext=(12, 16), textcoords='offset points', ha='left',
+               fontsize=7.5, color=C.MUTED)
+    a.set_xlim(0.70, 1.12)
+    a.set_xlabel('sense range (m)')
+    a.set_ylabel('lattice error in simulation (m)')
+    a.set_title('More edges is not simply better')
+
+    fig.suptitle('Why the sense-range sweep found nothing', y=1.02,
+                 fontsize=12, fontweight='bold')
+    fig.savefig(os.path.join(out, '0_why_null.png'))
+    plt.close(fig)
+    return sw
+
+
 def rung_name(r, unit, sep=' · '):
     """'0.3 rad/s · 16 Sep' -- the unit belongs to the value, not to the date."""
     parts = r['label'].split('\n')
@@ -434,6 +534,7 @@ def main():
         if spec['algo'] == 'Coverage':
             fig_coverage(runs, spec, out)
         else:
+            fig_topology(runs, spec, out)
             fig_flocking(runs, spec, out)
         fig_deviation(runs, spec, out)
         with open(os.path.join(out, 'summary.json'), 'w') as fh:
