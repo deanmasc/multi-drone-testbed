@@ -1,0 +1,137 @@
+# FLOCKING MEASUREMENT-NOISE LADDER -- 10 mm per axis on drone1's VICON position.
+#
+# Identical to testbed_flocking_hybrid_s2.yaml in every other respect. The only
+# thing that changes across the four rungs (n0/n2/n5/n10) is mocap_noise.
+#
+# WHY THIS LADDER. Every sweep before the trochoidal noise ladder varied a
+# parameter INSIDE the control law -- hotspot speed, sense range, graph
+# topology -- and none of them widened the gap between hardware and
+# simulation, because the simulator runs the same parameter from the same
+# file. Only a lever in the PHYSICAL layer can. On 23 Sep, noise on the
+# position sensor moved trochoidal r2 from 2.7 to 15.4 cm RMS off its designed
+# pattern (section 15k). This ladder asks whether that is a property of the
+# mechanism or of trochoidal.
+#
+# WHY s2 AS THE BASE. The mechanism is amplification, not the noise itself:
+# mocap_state_node fits velocity by least squares over velocity_window = 10
+# samples at ~100 Hz, whose slope has SD 11*sigma, and the law's own-velocity
+# term multiplies that by k. So the prediction is 11*k*sigma, and the test is
+# whether laws at the same k respond the same way.
+#
+#     trochoidal r2   k = 2.00   k*tau 0.56   11k = 22x   (flown, 15.4 cm at 10 mm)
+#     flocking   s2   k = 2.28   k*tau 0.64   11k = 25x   (this ladder)
+#     coverage   c2   k = 2.40   k*tau 0.67   11k = 26x
+#
+# All three are below the 0.67-1.01 oscillation threshold and all three clip
+# 0%, so the noise response is not contaminated by the k*tau instability or by
+# saturation. s2 sits slightly closer to the threshold than r2, where the mode
+# is less damped, so the second prediction is that flocking responds a little
+# MORE strongly than trochoidal did.
+#
+# READ IT ON PATTERN DEVIATION, NOT ON THE LATTICE. Only drone1 is real, and
+# lattice error is a mean over all six pairs, so noise on one agent of four is
+# diluted by construction. The benchmark is drone1's own distance from where
+# the noiseless simulation of this file put it -- the same metric as the
+# trochoidal ladder, which tools/plot_noise_ladder.py already computes.
+#
+# mocap_noise is read by hardware_hybrid.launch.py (mocap_noise:=config, the
+# default) and is inert to the algorithm, which ignores unknown keys. It is
+# here rather than only in --note so the recorder writes it into the record
+# header, where the analysis reads it back.
+
+simulation:
+  dt: 0.1
+  control_rate: 10.0     # verified identical behaviour at 5, 10 and 20 Hz
+  sim_rate: 10.0
+  # Same box the real drones are geofenced to, so a virtual agent cannot lead a
+  # real one somewhere it would be aborted for following.
+  bounds: 1.5
+
+# PLACE THE REAL DRONE(S) ON THESE MARKS before launching. For a virtual drone
+# the position below is what it starts from; for a real one mocap decides where
+# it actually is, but the algorithm was sized assuming it starts here.
+#
+# The layout is a square of side ~1.3 m, DELIBERATELY NUDGED off perfect
+# symmetry. This matters. A perfectly symmetric square start stays symmetric --
+# the drones settle into a square (both diagonals 0.828 m) instead of the usual
+# diamond, because nothing in the law breaks the tie. That equilibrium is a
+# knife edge: real mocap noise and prop wash will break it mid-flight and the
+# shape will collapse to the diamond at an unpredictable moment. Starting
+# asymmetric makes the outcome deterministic and repeatable.
+#
+# drone1 and drone2 are placed on OPPOSITE corners on purpose. They settle as
+# the long diagonal of the diamond, the furthest-separated pair, so those are
+# the two to make real -- and they are already the two airframes configured in
+# config/crazyflies.yaml, so hw_drone, cf_name and mocap_name all line up
+# without a confusing cross-mapping.
+drones:
+  - id: "drone1"          # REAL when flying two. Top-right corner.
+    initial_position: [0.68, 0.65]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone2"          # REAL when flying two. Bottom-left corner.
+    initial_position: [-0.60, -0.65]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone3"          # virtual. Top-left corner.
+    initial_position: [-0.65, 0.62]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+  - id: "drone4"          # virtual. Bottom-right corner.
+    initial_position: [0.63, -0.66]
+    initial_velocity: [0.0, 0.0]
+    role: "follower"
+
+# Predicted steady state from the starts above, measured over 120 s:
+#
+#   drone1-drone2  0.939   <- long diagonal: THE TWO REAL DRONES
+#   drone3-drone4  0.700   <- short diagonal, both virtual
+#   drone1-drone3  0.586      drone1-drone4  0.586
+#   drone2-drone3  0.586      drone2-drone4  0.586
+#
+#   closest approach between ANY two   0.582 m
+#   furthest any drone gets from the origin  1.124 m
+#       -> 0.38 m of margin to the 1.5 m geofence, 0.68 m to the 1.8 m abort
+#   peak speed  0.43 m/s during the 3 s pull-in, 0.16 m/s once settled
+#
+# SEPARATION OF THE TWO REAL DRONES. Which pair lands on which diagonal depends
+# on where they actually start, so it is worth knowing how much placement error
+# this tolerates. Over 20 trials with every drone displaced by up to +/-8 cm,
+# drone1-drone2 stayed the long 0.939 m diagonal in 13 and fell back to the
+# short 0.700 m one in the other 7. It never became a 0.586 m side. So the
+# guaranteed floor between the two aircraft is 0.70 m; the usual case is 0.94 m.
+#
+# Across 45 random layouts the closest ANY two drones came was 0.475 m, and two
+# drones deliberately started 0.15 m apart were pushed steadily apart and never
+# got closer. The repulsion term works. It is still only a 2D law with no
+# knowledge of rotor extent, so keep the launch file's altitude stagger.
+algorithm:
+  name: "Flocking"
+  params:
+    spacing: 0.70          # settles at 0.84x -> 0.586 m actual
+    sense_range: 0.84
+    epsilon: 0.1
+    bump_h: 0.2
+    action_a: 5.0
+    action_b: 5.0
+    gain_c1_alpha: 0.25    # rescale xc^2; baseline 1.0
+    gain_c2_alpha: 1.0     # rescale xc; baseline 2.0
+    gain_c1_gamma: 0.125   # rescale xc^2; baseline 0.5
+    gain_c2_gamma: 0.7     # rescale xc; baseline 1.4
+    gamma_mode: "circle"
+    gamma_center: [0.0, 0.0]
+    gamma_radius: 0.6      # 0.8 in the desk sim; pulled in for the geofence
+    gamma_speed: 0.075     # rescale xc; baseline 0.15 (25 s lap) -> 50.3 s lap
+    gamma_heading: 0.0
+    # 3.5, the same clamp as every trochoidal and coverage rung. It was 0.5
+    # -- the codebase default, chosen long ago to "match crazyflie_node's
+    # clamp" -- and flocking simply never got raised when the other two
+    # ladders were standardised on 3.5 (section 11h). That left the key
+    # figure comparing oscillation amplitudes across algorithms whose clamps
+    # differed by 7x. Measured achieved acceleration is 8-10 m/s2 on the
+    # unstable rungs, so 3.5 is still well under what the aircraft can do.
+    # Flown records keep their own max_accel in the header, and plot_ladder /
+    # plot_levers read it from there, so this does not disturb any past
+    # analysis.
+    max_accel: 3.5
+    mocap_noise: 0.01   # 10 mm per axis
