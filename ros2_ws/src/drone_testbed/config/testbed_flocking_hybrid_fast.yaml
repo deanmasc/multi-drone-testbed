@@ -108,4 +108,14 @@ algorithm:
     gamma_radius: 0.6      # 0.8 in the desk sim; pulled in for the geofence
     gamma_speed: 0.30      # F4 variant: 12.6 s per lap (baseline 0.15, 25 s)
     gamma_heading: 0.0
-    max_accel: 0.5
+    # 3.5, the same clamp as every trochoidal and coverage rung. It was 0.5
+    # -- the codebase default, chosen long ago to "match crazyflie_node's
+    # clamp" -- and flocking simply never got raised when the other two
+    # ladders were standardised on 3.5 (section 11h). That left the key
+    # figure comparing oscillation amplitudes across algorithms whose clamps
+    # differed by 7x. Measured achieved acceleration is 8-10 m/s2 on the
+    # unstable rungs, so 3.5 is still well under what the aircraft can do.
+    # Flown records keep their own max_accel in the header, and plot_ladder /
+    # plot_levers read it from there, so this does not disturb any past
+    # analysis.
+    max_accel: 3.5
