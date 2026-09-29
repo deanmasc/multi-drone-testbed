@@ -55,6 +55,15 @@ LEVER_SECTIONS = [
                'a parameter inside the control law, which cannot widen the '
                'gap to simulation by construction. This one is a property of '
                'the hardware, and it does.'),
+    dict(key='noise_ladder_flocking', name='Sensor noise: flocking', accent='#1f8a63',
+         blurb='The same lever on Olfati-Saber flocking at k·τ = 0.64 — 0, 2, 5 '
+               'and 10 mm per axis on drone1, flown 29 Sep. The flight degrades, '
+               'but only one of the theorem\'s four promises reports it.'),
+    dict(key='noise_ladder_coverage', name='Sensor noise: coverage', accent='#c2571a',
+         blurb='The same lever on Cortés coverage at k·τ = 0.67, with a fifth '
+               'rung at 20 mm because coverage is the quiet algorithm, flown '
+               '29 Sep. Deviation, oscillation and acceleration all climb; the '
+               'coverage cost and the centroid distances do not move at all.'),
     dict(key='flocking_sense', name='Sense range', accent='#1f8a63',
          blurb='A NULL RESULT, kept for the reason it failed. Both rungs turned '
                'out to be the same neighbour graph, so there was nothing there '
@@ -85,7 +94,63 @@ CAPTIONS = {
         'monotonically with the noise. The drone chases its own measurement '
         'error: the least-squares velocity fit multiplies position noise by '
         '11, the brake multiplies that by β, so 10 mm of position noise '
-        'reaches the command as roughly 22 times its size.'),
+        'reaches the command as roughly 22 times its size. CAVEAT, added '
+        '30 Sep: the recorder takes x and y from /state, i.e. the noisy '
+        'reading, so the speed panel is mostly the differentiator amplifying '
+        'the injection (0.117 m/s measured against a 0.091 m/s sensor-only '
+        'null) and the oscillation panel is partly so (1.37 against 0.78 cm). '
+        'The deviation panel is inflated by under 1% and the tilt panel comes '
+        'from /poses, so the headline of this ladder is unaffected. The two '
+        'later ladders carry the null explicitly.'),
+    # --- measurement noise on the other two algorithms (29 Sep) -------------
+    'noise_ladder_flocking/1_deviation.png': (
+        'Sensor noise, flocking: distance from the designed position',
+        'drone1 against where the noiseless simulation of the same config put '
+        'it, over a 124 s window. RMS deviation 5.5 / 4.8 / 9.1 / 11.1 cm. The '
+        '0 and 2 mm rungs are indistinguishable — 2 mm of noise is below what '
+        'a single flight can resolve here — but 5 and 10 mm are clearly '
+        'separated from the control. The window stops at 138 s to exclude a '
+        '0.9 s tracking loss in the 2 mm record at t = 144 s.'),
+    'noise_ladder_flocking/2_paths.png': (
+        'Sensor noise, flocking: the flown path against the designed one',
+        'The gamma term walks the flock around a 0.6 m circle, so the designed '
+        'path is a clean orbit. It stays clean at 2 mm, frays at 5 mm and is '
+        'visibly ragged at 10 mm.'),
+    'noise_ladder_flocking/3_two_benchmarks.png': (
+        'Sensor noise, flocking: the flight against the theorem\'s own promises',
+        'The weak half of the pair, and the figure says so. Deviation is the '
+        'only measure that clears its sensor-only null (×2.0 from the control, '
+        '×1.9 its null); the oscillation sits at the null and the tilt, on the '
+        'clean /poses channel, does not move. Bottom row: all four of '
+        'Olfati-Saber\'s promises stay put. Velocity matching appears to move '
+        '×3.5, but it reads the least-squares velocity, where the fit has '
+        'already multiplied the position noise by 11 — at 10 mm that alone is '
+        '0.11 m/s, more than the whole rise. It is an artefact, greyed here.'),
+    'noise_ladder_coverage/1_deviation.png': (
+        'Sensor noise, coverage: distance from the designed position',
+        'Five rungs over a 112 s window. RMS deviation 3.6 / 10.3 / 8.2 / 10.5 '
+        '/ 18.3 cm. The control is flat and low for the whole flight; 20 mm is '
+        'never quiet. With one flight per rung the 2-10 mm ordering is inside '
+        'the run-to-run spread, but the control and the 20 mm rung are not '
+        'close to each other.'),
+    'noise_ladder_coverage/2_paths.png': (
+        'Sensor noise, coverage: the flown path against the designed one',
+        'drone1 chasing the orbiting hotspot. The 0 mm trace sits on the grey '
+        'design; by 20 mm the drone is scribbling a band roughly 20 cm wide '
+        'around it.'),
+    'noise_ladder_coverage/3_two_benchmarks.png': (
+        'Sensor noise, coverage: the flight against the algorithm\'s own metrics',
+        'The cleanest version of the result, on three independent measures. '
+        'Deviation ×5.1 from the control and ×4.0 its sensor-only null; '
+        'oscillation ×8.2 and ×3.8 its null; median tilt ×2.0 and p95 ×2.7 on '
+        'the /poses channel, which the injection never touches. Bottom row: '
+        'the mean and worst distance to each agent\'s own Voronoi centroid, '
+        'the locational cost H, and how often H rose instead of falling. All '
+        'four span 2-9% of their own mean across the whole ladder, with no '
+        'trend — and since they are computed from the noisy positions, the '
+        'noise can only have biased them upwards, so their flatness is an '
+        'understatement. The coverage objective cannot see a lever that '
+        'doubles the tilt and puts the drone 18 cm off its designed position.'),
     # --- levers (22 Sep) ----------------------------------------------------
     'coverage_hotspot/1_hotspot_speed.png': (
         'Hotspot speed: oscillation, lag and cost',
@@ -276,6 +341,19 @@ def key_cards():
          f'{g("noise_ladder", "10", "dev_rms", 100, "{:.1f}")} cm — '
          f'{_ratio("noise_ladder", "10", "dev_rms", "design_r")} of the '
          f'pattern\'s own radius — with every gain held fixed.'),
+        ('noise_ladder_coverage/3_two_benchmarks.png',
+         'The gap the published metrics do not report',
+         f'The same noise lever on coverage, with a 20 mm rung added because '
+         f'coverage is the quiet algorithm. It moves the flight hard — '
+         f'{g("noise_ladder_coverage", "0", "dev_rms", 100, "{:.1f}")} to '
+         f'{g("noise_ladder_coverage", "20", "dev_rms", 100, "{:.1f}")} cm off the '
+         f'designed position, oscillation ×8, median tilt ×2 on a channel the '
+         f'injection cannot reach — while the locational cost H and both '
+         f'centroid distances, the numbers a coverage paper actually plots, '
+         f'stay inside 4% of their own mean. Flocking splits the same way, and '
+         f'harder: all four of its theorem metrics stay put, and the one that '
+         f'appears to move is reading its own noisy velocity estimate. Which '
+         f'metric you publish decides whether the sim-to-hardware gap exists.'),
         ('trochoidal_ladder/8_design_vs_actual.png',
          'Trochoidal: where the ladder started',
          'The original finding, kept here for comparison: the designed pattern '
