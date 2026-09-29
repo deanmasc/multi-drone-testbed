@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'ros2_ws', 'src', 'dr
 
 import drone_testbed.algorithms  # triggers @register_algorithm decorators
 from drone_testbed.algorithms.registry import get_algorithm, list_algorithms
+from drone_testbed.algorithms.distance_formation import DistanceFormation
 from drone_testbed.dynamics.double_integrator import step as physics_step
 from drone_testbed.utils.types import DroneState, ControlOutput
 import yaml
@@ -248,8 +249,11 @@ def run(algo_name_override=None, config_name=None):
                             fc=color, ec=color, alpha=0.8, zorder=4,
                         )
 
+                reference_label = ''
+                if isinstance(algorithm, DistanceFormation) and algo_params.get('breathing_amplitude', 0):
+                    reference_label = f'   |   target scale = {algorithm.reference()[1]:.3f}'
                 ax.set_title(
-                    f'Algorithm: {algo_name}   |   t = {sim_time:.1f}s',
+                    f'Algorithm: {algo_name}   |   t = {sim_time:.1f}s{reference_label}',
                     color='black', fontsize=13, pad=10,
                 )
                 fig.canvas.draw()

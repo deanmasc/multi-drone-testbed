@@ -61,12 +61,21 @@ def run(cfg, duration, rate=None):
         ds = {i: DroneState(i, state[i][:2].copy(), state[i][2:].copy())
               for i in ids}
         out = algo.compute_controls(ds, dt)
+        breathing = isinstance(metrics, M.DistanceFormationMetrics) and metrics.breathing.enabled
+        if breathing:
+            # Score the state the controller actually saw against that tick's
+            # reference, before integrating. This also records the true t=0.
+            metrics.set_reference(*algo.reference())
+            pos = np.array([state[i][:2] for i in ids])
+            vel = np.array([state[i][2:] for i in ids])
+            row = metrics.full_row(t, pos, vel)
         for i in ids:
             state[i] = step(state[i], out[i].acceleration, dt)
 
-        pos = np.array([state[i][:2] for i in ids])
-        vel = np.array([state[i][2:] for i in ids])
-        row = metrics.full_row(t, pos, vel)   # z is nan: no hardware here
+        if not breathing:
+            pos = np.array([state[i][:2] for i in ids])
+            vel = np.array([state[i][2:] for i in ids])
+            row = metrics.full_row(t, pos, vel)   # z is nan: no hardware here
         if row is not None:
             ts.append(t)
             rows.append(row)

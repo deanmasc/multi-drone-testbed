@@ -1,0 +1,73 @@
+# Expanding/contracting hexagon: use this SAME config for simulation and hybrid.
+# Based on the static hybrid's geometry, gains, initial positions and anchor.
+# Simulation: python3 run_sim.py --config testbed_hexagon_breathing.yaml
+# Baseline: python3 tools/sim_baseline.py --config <this path> --duration 150
+# Hybrid: ./fly.sh testbed_hexagon_breathing --real drone1,drone4 --duration 150 --record
+# Real positions come from VICON: place real drones on their marks below.
+# See docs/DISTANCE_BREATHING.md for the test sequence and recorded quantities.
+
+simulation:
+  dt: 0.1
+  control_rate: 10.0
+  sim_rate: 10.0
+  bounds: 1.5
+
+drones:
+  - id: drone1
+    initial_position: [0.59, -0.19]
+    initial_velocity: [0.0, 0.0]
+    role: leader
+  - id: drone2
+    initial_position: [0.17, 0.90]
+    initial_velocity: [0.0, 0.0]
+    role: follower
+  - id: drone3
+    initial_position: [-0.24, 0.17]
+    initial_velocity: [0.0, 0.0]
+    role: follower
+  - id: drone4
+    initial_position: [-0.93, -0.06]
+    initial_velocity: [0.0, 0.0]
+    role: follower
+  - id: drone5
+    initial_position: [-0.58, -0.68]
+    initial_velocity: [0.0, 0.0]
+    role: follower
+  - id: drone6
+    initial_position: [0.34, -0.95]
+    initial_velocity: [0.0, 0.0]
+    role: follower
+
+algorithm:
+  name: DistanceFormation
+  params:
+    side_length: 0.7              # Nominal side, metres; HOLD FIXED in sweeps.
+    formation_center: [0.0, 0.0]  # Pivot used to scale the anchor target.
+    formation_rotation: 0.0
+    topology: octahedron         # HOLD FIXED: all ring AND chord targets scale.
+
+    # MAIN TEST VARIABLE: seconds per full expansion/contraction cycle.
+    # Start at 30; compare 60, 30, 20, then 15 in simulation first.
+    # Smaller = faster moving target, larger tracking demand.
+    breathing_period: 30.0
+
+    # SECOND TEST VARIABLE: fractional size swing, not metres.
+    # 0.10 = +/-10%: side length 0.63--0.77 m after the ramp.
+    # Compare 0.05, 0.10, 0.15 at a FIXED period. 0 restores static behaviour.
+    breathing_amplitude: 0.10
+
+    # Experiment timing, in controller seconds (starts after takeoff hold).
+    breathing_start_delay: 15.0   # Hold nominal size to form the hexagon first.
+    breathing_ramp_duration: 5.0  # Smoothly introduce motion; > 0.
+
+    # SECONDARY SWEEPS: change only one gain after the period/amplitude study.
+    gain_kp: 0.45                 # Formation correction strength.
+    gain_kv: 1.2                  # Velocity damping.
+    max_accel: 0.5                # Per-axis limit; HOLD FIXED.
+
+    # Same anchor as the static hybrid. Its nominal vertex scales about
+    # formation_center: drone1's x target varies 0.63--0.77 m, y stays zero.
+    # Do not use centroid invariance as a success criterion with an anchor.
+    anchor: [drone1]
+    anchor_gain_kp: 0.4
+    anchor_gain_kd: 0.0
