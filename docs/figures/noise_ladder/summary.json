@@ -21,8 +21,20 @@
       0.02428715092799832,
       0.026647609528309444
     ],
+    "n_real": 1,
+    "sep_min": null,
     "rec": "trochoidalconsensus_20260923_152619.txt",
-    "cfg": "testbed_fig4_r2_n0.yaml"
+    "cfg": "testbed_fig4_r2_n0.yaml",
+    "reals": [
+      "drone1"
+    ],
+    "per_real": {
+      "drone1": {
+        "dev_rms": 0.02689533639630327,
+        "dev_med": 0.024977889540358296,
+        "dev_p95": 0.04267904549651515
+      }
+    }
   },
   "2": {
     "noise": 0.002,
@@ -46,8 +58,20 @@
       0.04635147239313528,
       0.07748249293573363
     ],
+    "n_real": 1,
+    "sep_min": null,
     "rec": "trochoidalconsensus_20260923_153238.txt",
-    "cfg": "testbed_fig4_r2_n2.yaml"
+    "cfg": "testbed_fig4_r2_n2.yaml",
+    "reals": [
+      "drone1"
+    ],
+    "per_real": {
+      "drone1": {
+        "dev_rms": 0.057558815853852474,
+        "dev_med": 0.04918418698784594,
+        "dev_p95": 0.09288779304323971
+      }
+    }
   },
   "5": {
     "noise": 0.005,
@@ -71,8 +95,20 @@
       0.09399787126935226,
       0.11124026070575656
     ],
+    "n_real": 1,
+    "sep_min": null,
     "rec": "trochoidalconsensus_20260923_154226.txt",
-    "cfg": "testbed_fig4_r2_n5.yaml"
+    "cfg": "testbed_fig4_r2_n5.yaml",
+    "reals": [
+      "drone1"
+    ],
+    "per_real": {
+      "drone1": {
+        "dev_rms": 0.10047307248895371,
+        "dev_med": 0.0944799711533294,
+        "dev_p95": 0.1539298692342843
+      }
+    }
   },
   "10": {
     "noise": 0.01,
@@ -96,7 +132,19 @@
       0.0881393840565902,
       0.23966658995356654
     ],
+    "n_real": 1,
+    "sep_min": null,
     "rec": "trochoidalconsensus_20260923_155129.txt",
-    "cfg": "testbed_fig4_r2_n10.yaml"
+    "cfg": "testbed_fig4_r2_n10.yaml",
+    "reals": [
+      "drone1"
+    ],
+    "per_real": {
+      "drone1": {
+        "dev_rms": 0.15416707356934536,
+        "dev_med": 0.091128859504659,
+        "dev_p95": 0.311953223262624
+      }
+    }
   }
 }
