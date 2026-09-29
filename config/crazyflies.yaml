@@ -77,8 +77,11 @@ robots:
   #
   # The key name here must match the VICON Tracker rigid body exactly, and is
   # what cf_name/mocap_name are set to on the launch command line.
+  # ENABLED 2026-09-29 for the fleet-size 2x2 (one real drone vs two, at 0 and
+  # 10 mm of injected VICON noise). Set back to false for single-drone work --
+  # with this true and the airframe unpowered, the server stalls waiting for it.
   drone_2:
-    enabled: false
+    enabled: true
     uri: radio://0/20/2M/E7E7E7E7E8
     initial_position: [0.179, 0.219, 0.0158]
     type: cf21
