@@ -20,6 +20,7 @@ import copy
 import json
 import math
 import os
+import re
 import sys
 
 import numpy as np
@@ -46,7 +47,17 @@ RUNS = [
     ('5', 'trochoidalconsensus_20260923_154226.txt', 'testbed_fig4_r2_n5.yaml'),
     ('10', 'trochoidalconsensus_20260923_155129.txt', 'testbed_fig4_r2_n10.yaml'),
 ]
-REAL = 'drone1'
+# Fallback only. Which agents were REAL is not the same for every record --
+# the 23 Sep noise ladders flew drone1 alone, the fleet-size runs fly drone1
+# and drone4 -- and scoring a real aircraft as a simulated one corrupts the
+# leakage number this ladder exists to measure. The recorder writes the answer
+# into every record:
+#
+#     # note         real drones drone1=VICON drone_1, drone4=VICON drone_2
+#
+# so read_real() takes it from the file and REAL is only used for records
+# written before that note existed.
+REAL = ('drone1',)
 DT = 0.1          # the recorder's row interval
 # All four flights ran 180 s and began descending at ~185 s, so a single window
 # is used for every rung rather than each one's own live end: the deviation
@@ -75,6 +86,24 @@ def name(k):
     return 'no added noise' if k == '0' else f'{k} mm'
 
 
+def read_real(path, ids):
+    """The real drones named in the record's own header, else REAL."""
+    try:
+        with open(path) as fh:
+            for line in fh:
+                if not line.startswith('#'):
+                    break
+                m = re.search(r'real drones\s+(.*)', line)
+                if m:
+                    got = tuple(p.split('=')[0].strip() for p in m.group(1).split(','))
+                    got = tuple(i for i in got if i in ids)
+                    if got:
+                        return got
+    except OSError:
+        pass
+    return tuple(i for i in REAL if i in ids)
+
+
 def bp(x, lo, hi, axis=0):
     return sosfiltfilt(butter(4, [lo, hi], 'band', fs=1 / DT, output='sos'),
                        x, axis=axis)
@@ -93,7 +122,8 @@ def analyse(label, rec, cfgname):
                   for i in ids], 1)
     last = A.live_end(P)
     _, virt, _, _, t_start = A.classify(t, P, last, ids)
-    j = ids.index(REAL)
+    reals = read_real(rec, ids)
+    j = ids.index(reals[0])          # the primary real drone, for the figures
 
     t0 = t_start + WIN_SKIP
     tg = np.arange(t0, t0 + WIN_LEN, DT)
@@ -102,8 +132,8 @@ def analyse(label, rec, cfgname):
                          f'{WIN_LEN:.0f} s window closes at {tg[-1]:.0f} s')
     Pg = np.stack([np.stack([np.interp(tg, t, P[:, n, ax]) for ax in (0, 1)], 1)
                    for n in range(len(ids))], 1)                 # rows, drone, 2
-    tilt = np.interp(tg, t, D[:, cols.index(f'tilt_{REAL}')])
-    z = np.interp(tg, t, D[:, cols.index(f'z_{REAL}')])
+    tilt = np.interp(tg, t, D[:, cols.index(f'tilt_{reals[0]}')])
+    z = np.interp(tg, t, D[:, cols.index(f'z_{reals[0]}')])
 
     # The designed pattern: the same config in the noiseless simulator, started
     # from where the fleet actually was when the algorithm engaged. Started from
@@ -120,20 +150,41 @@ def analyse(label, rec, cfgname):
                              for ax in (0, 1)], 1) for n in range(len(ids))], 1)
 
     dev = np.hypot(*(Pg[:, j] - Dg[:, j]).T)                     # m, per row
-    dev_virt = np.mean([np.hypot(*(Pg[:, n] - Dg[:, n]).T)
-                        for n in range(len(ids)) if n != j], axis=0)
+    # Only the genuinely simulated agents. Averaging a second REAL aircraft in
+    # here would put a noisy drone into the "how much leaks into the clean
+    # agents" number, which is the one this ladder is built to read.
+    vj = [n for n, i in enumerate(ids) if i not in reals]
+    dev_virt = (np.mean([np.hypot(*(Pg[:, n] - Dg[:, n]).T) for n in vj], axis=0)
+                if vj else np.zeros(len(tg)))
+    per_real = {i: np.hypot(*(Pg[:, ids.index(i)] - Dg[:, ids.index(i)]).T)
+                for i in reals}
+    # Closest approach between the real aircraft, in plan. With two of them on
+    # marks 0.35 m apart this is the number that says whether the flight was
+    # safe, and it is not recoverable from any single drone's trace.
+    sep = None
+    if len(reals) > 1:
+        pairs = [(a, b) for n, a in enumerate(reals) for b in reals[n + 1:]]
+        sep = {f'{a}-{b}': np.hypot(*(Pg[:, ids.index(a)] - Pg[:, ids.index(b)]).T)
+               for a, b in pairs}
 
     zc = Pg[:, j, 0] + 1j * Pg[:, j, 1]
     ripple = bp(zc.real, *SHAKE_BAND) + 1j * bp(zc.imag, *SHAKE_BAND)
     V = np.gradient(Pg, DT, axis=0)
     Acc = np.gradient(V, DT, axis=0)
-    rel = sum(w * (Pg[:, j] - Pg[:, ids.index(n)]) for n, w in adj[REAL].items())
+    rel = sum(w * (Pg[:, j] - Pg[:, ids.index(n)]) for n, w in adj[reals[0]].items())
     u = -al * Pg[:, j] - be * V[:, j] - ka * (rel @ Rm.T)
 
     thirds = [float(np.sqrt(np.mean(dev[i * len(dev) // 3:(i + 1) * len(dev) // 3] ** 2)))
               for i in range(3)]
     return dict(
         label=label, noise=noise, rec=rec, cfg_name=cfgname, beta=be, clamp=clamp,
+        reals=reals, n_real=len(reals),
+        per_real={i: dict(dev=v, dev_rms=float(np.sqrt(np.mean(v ** 2))),
+                          dev_med=float(np.median(v)),
+                          dev_p95=float(np.percentile(v, 95)))
+                  for i, v in per_real.items()},
+        sep=sep,
+        sep_min=(float(min(v.min() for v in sep.values())) if sep else None),
         t_start=t_start, live=t[last], tau=tg - t_start, Pg=Pg, Dg=Dg, j=j,
         design_r=float(np.median(np.hypot(*Dg[:, j].T))),
         dev=dev, dev_virt=dev_virt, thirds=thirds,
@@ -171,7 +222,23 @@ def table(runs):
           f"{np.mean([r['design_r'] for r in runs]) * 100:.0f} cm, so the 10 mm rung's "
           f"{runs[-1]['dev_rms'] * 100:.0f} cm RMS deviation is "
           f"{runs[-1]['dev_rms'] / runs[-1]['design_r'] * 100:.0f}% of the pattern itself")
-    print('simulated agents (drone2-4), RMS deviation: ' +
+    if any(r['n_real'] > 1 for r in runs):
+        print('\nper real drone, RMS deviation from its own design (cm):')
+        for r in runs:
+            cells = '  '.join(f"{i} {v['dev_rms'] * 100:5.1f}"
+                              for i, v in r['per_real'].items())
+            print(f"  {r['label']:>4}mm  {cells}")
+        print('\nclosest approach between the real aircraft (m), '
+              'and how much of the flight inside 0.30 m:')
+        for r in runs:
+            if not r['sep']:
+                print(f"  {r['label']:>4}mm  single real drone")
+                continue
+            for k, v in r['sep'].items():
+                print(f"  {r['label']:>4}mm  {k}  min {v.min():.2f}  "
+                      f"median {np.median(v):.2f}  "
+                      f"under 0.30 m for {np.mean(v < 0.30) * 100:.1f}% of rows")
+    print('simulated agents, RMS deviation: ' +
           ', '.join(f"{r['label']}mm {r['virt_rms'] * 100:.1f} cm" for r in runs))
     print('every rung stayed inside the limits: max radius ' +
           ', '.join(f"{r['radius_max']:.2f}" for r in runs) +
@@ -348,10 +415,15 @@ def main():
                             ('noise', 'beta', 'dev_rms', 'dev_med', 'dev_p95',
                              'dev_max', 'virt_rms', 'ripple', 'speed', 'speed_p95',
                              'tilt_p95', 'tilt_max', 'clip', 'u_med', 'radius_max',
-                             'design_r', 'thirds')} for r in runs}
+                             'design_r', 'thirds', 'n_real', 'sep_min')}
+               for r in runs}
     for r in runs:
         summary[r['label']]['rec'] = os.path.basename(r['rec'])
         summary[r['label']]['cfg'] = r['cfg_name']
+        summary[r['label']]['reals'] = list(r['reals'])
+        summary[r['label']]['per_real'] = {
+            i: {k: v[k] for k in ('dev_rms', 'dev_med', 'dev_p95')}
+            for i, v in r['per_real'].items()}
     with open(os.path.join(a.out, 'summary.json'), 'w') as fh:
         json.dump(summary, fh, indent=2)
     print(f'\nfigures in {a.out}')
