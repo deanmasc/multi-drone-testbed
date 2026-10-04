@@ -1,0 +1,79 @@
+# ============================================================================
+# Kuramoto formation, k*tau ladder rung k12
+# ============================================================================
+# Generated for the 6-7 Oct lab sessions. Derived from testbed_kuramoto.yaml with THREE
+# deliberate changes and nothing else:
+#
+#   1 velocity_gain: 2.0 -> 4.3
+#     This is the algorithm's own-velocity gain k -- the coefficient on the
+#     drone's own measured velocity in the commanded acceleration. Multiplied
+#     by the measured 0.28 s sense-to-act delay it gives k*tau = 1.20.
+#     Across trochoidal (beta), coverage (gain_kd) and flocking
+#     (c2_gamma + c2_alpha * sum of bumps), oscillation starts somewhere in
+#     k*tau 0.67-1.01 and the period is 4*tau ~ 1.1 s. This ladder asks
+#     whether the same number predicts it for a fourth and fifth control law
+#     from two more papers.
+#
+#   2 max_accel: 0.5 -> 3.5
+#     The 0.5 clamp is below what every other algorithm in the corpus now
+#     flies, so leaving it would confound a cross-algorithm comparison with a
+#     saturation difference. 3.5 is what trochoidal, coverage and flocking all
+#     use. It rate-limits the reference trajectory, not the aircraft.
+#
+#   3 mocap_noise: 0.0
+#     No injected noise. This rung is the control for its ladder.
+#
+# Everything else -- shape, marks, topology, rate -- is untouched, so this is
+# comparable to its siblings and to testbed_kuramoto.yaml.
+# ============================================================================
+
+# Uses the same algorithm_manager and acceleration commands as TrochoidalConsensus.
+# Simulation: ros2 launch drone_testbed sim.launch.py config:=config/testbed_kuramoto.yaml
+# One real drone + three virtual neighbors (with the Crazyflie backend running):
+# ros2 launch drone_testbed hardware_hybrid.launch.py config:=config/testbed_kuramoto.yaml
+# All four states must arrive before commands start. hardware_single does not
+# create virtual neighbors; use hardware_hybrid for this four-agent config.
+# Place real drones near their listed positions on the 0.65 m ring. Measured
+# angles initialize the oscillators, but radial error still requires correction.
+simulation:
+  dt: 0.1
+  control_rate: 10.0
+  sim_rate: 10.0
+  bounds: 1.5
+drones:
+  - id: drone1
+    initial_position: [0.65, 0.0]
+    initial_velocity: [0.0, 0.0]
+  - id: drone2
+    initial_position: [-0.25312, 0.59869]
+    initial_velocity: [0.0, 0.0]
+  - id: drone3
+    initial_position: [-0.62979, 0.16081]
+    initial_velocity: [0.0, 0.0]
+  - id: drone4
+    initial_position: [0.12914, -0.63704]
+    initial_velocity: [0.0, 0.0]
+algorithm:
+  name: "KuramotoFormation"
+  params:
+    center: [0.0, 0.0]
+    radius: 0.65
+    omega: 0.35                 # rad/s counterclockwise; period about 18 seconds
+    phase_gain: 0.25
+    tracking_phase_gain: 0.4    # check actual orbital angle; slow phase when motion lags
+    position_gain: 1.0
+    formation_gain: 0.8
+    velocity_gain: 4.3            # velocity_gain 2.0 -> 4.3, k*tau 1.20
+    max_accel: 3.5            # was 0.5; matches the rest of the corpus
+    mocap_noise: 0.0           # metres per axis on each REAL drone's VICON position
+    initialize_from_state: true # initialize angles from the first measured states
+    # Absolute angles (radians): used at the center, or when initialization from
+    # state is disabled. Uneven starting gaps demonstrate synchronization.
+    # Drone order assigns desired offsets 0, pi/2, pi, 3*pi/2.
+    initial_phases: {drone1: 0.0, drone2: 1.9707963268, drone3: 2.8915926536, drone4: 4.9123889804}
+    adjacency:
+      # Same weighted-neighbor format as TrochoidalConsensus; lists also work.
+      drone1: {drone2: 1.0, drone4: 1.0}
+      drone2: {drone1: 1.0, drone3: 1.0}
+      drone3: {drone2: 1.0, drone4: 1.0}
+      drone4: {drone1: 1.0, drone3: 1.0}
