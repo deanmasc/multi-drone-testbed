@@ -64,6 +64,11 @@ LEVER_SECTIONS = [
                'rung at 20 mm because coverage is the quiet algorithm, flown '
                '29 Sep. Deviation, oscillation and acceleration all climb; the '
                'coverage cost and the centroid distances do not move at all.'),
+    dict(key='fleet_size', name='Fleet size', accent='#c2571a',
+         blurb='One real drone against two, at 0 and 10 mm of noise — the only '
+               'sweep in the corpus that changes how much of the fleet is a '
+               'real aircraft rather than a parameter. Flown 23 and 30 Sep at '
+               'beta = 2. One flight per cell.'),
     dict(key='flocking_sense', name='Sense range', accent='#1f8a63',
          blurb='A NULL RESULT, kept for the reason it failed. Both rungs turned '
                'out to be the same neighbour graph, so there was nothing there '
@@ -151,6 +156,32 @@ CAPTIONS = {
         'noise can only have biased them upwards, so their flatness is an '
         'understatement. The coverage objective cannot see a lever that '
         'doubles the tilt and puts the drone 18 cm off its designed position.'),
+    # --- fleet size (23 + 30 Sep) -------------------------------------------
+    'fleet_size/1_deviation.png': (
+        'Fleet size: deviation with one real drone and with two',
+        'All four flights over a common 93 s window, and the 2x2 as paired '
+        'bars. At 0 mm the deviation goes 2.7 to 6.0 cm when a second aircraft '
+        'joins; at 10 mm, 8.3 to 11.4 cm. Black ticks are the sensor-only '
+        'null, because the recorder takes x and y from /state — the noisy '
+        'reading — so part of every 10 mm bar is the measurement, not the '
+        'aircraft.'),
+    'fleet_size/2_paths.png': (
+        'Fleet size: the flown path against the designed one',
+        'The 2x2 as paths, grey being each run\'s own noiseless replay. The '
+        'faint orange trace in the bottom row is drone4, the second real '
+        'aircraft. The four designed patterns are within 15% of each other on '
+        'radius and speed, so the rows are comparable despite being flown a '
+        'week apart from different start positions.'),
+    'fleet_size/3_caveats.png': (
+        'Fleet size: every measure, with the confound beside it',
+        'The cleanest signal is the second panel. Deviation of the three '
+        'SIMULATED agents — which never carry injected noise and never touch '
+        'the air — rises x1.75 at 0 mm and x1.70 at 10 mm when a second real '
+        'aircraft joins. The same factor at both noise levels says fleet size '
+        'acts separately from noise rather than amplifying it. Oscillation is '
+        'unreliable here (the 2-real 0 mm flight contains a disturbance) and '
+        'median tilt does not move. The two grey panels are the confound: the '
+        'four designed patterns span 17%, too little to explain the effects.'),
     # --- levers (22 Sep) ----------------------------------------------------
     'coverage_hotspot/1_hotspot_speed.png': (
         'Hotspot speed: oscillation, lag and cost',
