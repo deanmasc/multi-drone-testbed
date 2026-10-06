@@ -9,8 +9,8 @@ headless baseline, visual simulation and hybrid launch.
 
 | Variable under `algorithm.params` | Default | Meaning and test sequence |
 |---|---:|---|
-| **`breathing_period`** | **30.0 s** | **Change this first.** Seconds per complete expansion/contraction. Compare 60, 30, 20, 15 in simulation. Smaller values demand faster tracking. |
-| **`breathing_amplitude`** | **0.10** | Fractional size swing. 0.10 means ±10%, giving 0.63–0.77 m sides at nominal 0.7 m. Then compare 0.05, 0.10, 0.15 at a fixed period. **0 disables breathing.** Must be in `[0, 1)`. |
+| **`breathing_period`** | **20.0 s** | **Change this first.** Seconds per complete expansion/contraction. Compare 60, 30, 20, 15 in simulation. Smaller values demand faster tracking. |
+| **`breathing_amplitude`** | **0.2142857142857143** | Fractional size swing: ±21.43%, giving 0.55–0.85 m sides at nominal 0.7 m (**30 cm peak-to-peak**, ±15 cm). Compare amplitudes at a fixed period. **0 disables breathing.** Must be in `[0, 1)`. |
 | `gain_kp` | 0.45 | Formation correction gain. After the motion sweep, compare 0.15, 0.30, 0.45 at fixed period, amplitude and damping. |
 | `gain_kv` | 1.2 | Velocity damping. Then compare 0.8, 1.2, 1.6 with the other settings fixed. |
 | `breathing_start_delay` | 15.0 s | Hold nominal size before starting the wave. This is measured from controller activation, after the launch's takeoff hold. |
@@ -78,7 +78,7 @@ damping law; it does not add a motion feedforward term. Tracking lag is an
 experimental result, not something hidden by supplying the solution.
 
 Anchor targets scale about `formation_center` too. In the supplied config,
-drone1's anchor moves along x from 0.63 to 0.77 m after the ramp, with y = 0.
+drone1's anchor moves along x from 0.55 to 0.85 m after the ramp, with y = 0.
 This keeps the absolute anchor reference consistent with scaling about the
 configured center (a fixed anchor would instead imply a different placement).
 The scale schedule restarts on reset/reconfiguration. Existing configs without

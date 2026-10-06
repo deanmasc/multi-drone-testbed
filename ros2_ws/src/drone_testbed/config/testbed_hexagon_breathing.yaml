@@ -47,14 +47,14 @@ algorithm:
     topology: octahedron         # HOLD FIXED: all ring AND chord targets scale.
 
     # MAIN TEST VARIABLE: seconds per full expansion/contraction cycle.
-    # Start at 30; compare 60, 30, 20, then 15 in simulation first.
+    # Current cycle is 20 s; compare 60, 30, 20, then 15 in simulation.
     # Smaller = faster moving target, larger tracking demand.
-    breathing_period: 30.0
+    breathing_period: 20.0
 
     # SECOND TEST VARIABLE: fractional size swing, not metres.
-    # 0.10 = +/-10%: side length 0.63--0.77 m after the ramp.
-    # Compare 0.05, 0.10, 0.15 at a FIXED period. 0 restores static behaviour.
-    breathing_amplitude: 0.10
+    # 0.15 / 0.7 = +/-21.43%: sides 0.55--0.85 m (30 cm peak-to-peak).
+    # Compare amplitudes at a FIXED period. 0 restores static behaviour.
+    breathing_amplitude: 0.2142857142857143
 
     # Experiment timing, in controller seconds (starts after takeoff hold).
     breathing_start_delay: 15.0   # Hold nominal size to form the hexagon first.
@@ -66,7 +66,7 @@ algorithm:
     max_accel: 0.5                # Per-axis limit; HOLD FIXED.
 
     # Same anchor as the static hybrid. Its nominal vertex scales about
-    # formation_center: drone1's x target varies 0.63--0.77 m, y stays zero.
+    # formation_center: drone1's x target varies 0.55--0.85 m, y stays zero.
     # Do not use centroid invariance as a success criterion with an anchor.
     anchor: [drone1]
     anchor_gain_kp: 0.4
