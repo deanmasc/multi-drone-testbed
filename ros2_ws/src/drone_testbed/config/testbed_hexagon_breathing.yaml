@@ -63,7 +63,35 @@ algorithm:
     # SECONDARY SWEEPS: change only one gain after the period/amplitude study.
     gain_kp: 0.45                 # Formation correction strength.
     gain_kv: 1.2                  # Velocity damping.
-    max_accel: 0.5                # Per-axis limit; HOLD FIXED.
+    max_accel: 3.5                # Per-axis limit; HOLD FIXED across sweeps,
+                                  # but at 3.5 rather than the old 0.5.
+                                  #
+                                  # RAISED 6 Oct 2026. At the breathing
+                                  # settings set in a121ded (period 20 s,
+                                  # amplitude +/-21.4%) a 0.5 clamp saturates
+                                  # drone1's commanded acceleration on 49.5%
+                                  # of ticks in simulation -- peak demand is
+                                  # 1.40 m/s^2, nearly 3x the clamp. Half the
+                                  # run was therefore measuring the limiter
+                                  # rather than gain_kp/gain_kv.
+                                  #
+                                  # Measured in sim at max_accel 0.5, so it is
+                                  # clear which change did it -- the AMPLITUDE,
+                                  # not the period:
+                                  #     30 s, +/-10.0%   12.6% clipped
+                                  #     20 s, +/-21.4%   49.5%
+                                  #     20 s, +/-10.0%    7.8%
+                                  #     30 s, +/-21.4%   38.9%
+                                  #
+                                  # At 3.5 the same demand clips 0%. 3.5 is
+                                  # also what trochoidal, coverage, flocking
+                                  # and kuramoto now use, so cross-algorithm
+                                  # comparisons are not confounded by a
+                                  # saturation difference.
+                                  #
+                                  # Any breathing data recorded BEFORE this
+                                  # date was flown at 0.5 and is not directly
+                                  # comparable with runs after it.
 
     # Same anchor as the static hybrid. Its nominal vertex scales about
     # formation_center: drone1's x target varies 0.55--0.85 m, y stays zero.

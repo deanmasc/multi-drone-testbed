@@ -1,0 +1,127 @@
+# ============================================================================
+# Distance formation + BREATHING, k*tau ladder rung k08
+# ============================================================================
+# Generated 6 Oct for the k*tau ladder. Derived from
+# testbed_hexagon_breathing.yaml (Michael's config, as of a121ded) with THREE
+# changes and nothing else:
+#
+#   1 gain_kv: 1.2 -> 2.9
+#     The own-velocity gain k. Times the measured 0.28 s sense-to-act delay
+#     that is k*tau = 0.81. Trochoidal, coverage, flocking and kuramoto
+#     all start oscillating somewhere in k*tau 0.67-1.01 with a period of
+#     4*tau ~ 1.1 s; this ladder asks whether distance formation does too.
+#     THIS IS THE ONLY THING THAT DIFFERS BETWEEN THE THREE RUNGS.
+#
+#   2 max_accel: 0.5 -> 3.5
+#     NOT cosmetic, and a deliberate divergence from Michael's config. At the
+#     breathing settings in a121ded (period 20 s, amplitude +/-21.4%) a 0.5
+#     clamp saturates drone1's commanded acceleration on 49.5% of ticks in
+#     simulation -- peak demand is 1.40 m/s^2. A loop that is saturated half
+#     the time cannot show the linear instability this ladder is looking for,
+#     and every rung would read the same because every rung would be
+#     clamp-limited rather than gain-limited. At 3.5 the same demand clips 0%.
+#     It also matches trochoidal, coverage, flocking and kuramoto, so the five
+#     algorithms sit on one axis.
+#
+#     For reference, measured in sim at max_accel 0.5:
+#         30 s, +/-10.0%  (before a121ded)   12.6% of ticks clipped
+#         20 s, +/-21.4%  (a121ded)          49.5%
+#         20 s, +/-10.0%                      7.8%
+#         30 s, +/-21.4%                     38.9%
+#     So it is the amplitude change, not the period change, that does it.
+#
+#   3 mocap_noise: 0.0 declared explicitly, so the flown value reaches the
+#     record header and the analysis reads it back from the file.
+#
+# BREATHING IS UNTOUCHED -- period 20 s, amplitude +/-21.4%, delay 15 s,
+# ramp 5 s, exactly as Michael set them. It is identical on all three rungs,
+# so it is a CONSTANT of this experiment, not a variable: the only thing that
+# changes across the ladder is gain_kv. At 0.05 Hz it also sits 12-30x below
+# the 0.6-1.5 Hz band the oscillation is measured in, so it cannot contaminate
+# the ripple number.
+#
+# FLY WITH ONE REAL DRONE, drone1, on (0.59, -0.19):
+#
+#     ros2 launch drone_testbed hardware_hybrid.launch.py \
+#         config:=config/testbed_hexagon_breathing_k08.yaml \
+#         hw_drone:=drone1 cf_name:=drone_1 mocap_name:=drone_1 \
+#         flight_duration:=150
+#
+# 150 s, not 120: breathing starts at 15 s and ramps over 5 s, so a 120 s
+# flight gives only ~5 cycles. 150 gives ~6.5 after the ramp.
+# ============================================================================
+
+# Expanding/contracting hexagon: use this SAME config for simulation and hybrid.
+# Based on the static hybrid's geometry, gains, initial positions and anchor.
+# Simulation: python3 run_sim.py --config testbed_hexagon_breathing.yaml
+# Baseline: python3 tools/sim_baseline.py --config <this path> --duration 150
+# Hybrid: ./fly.sh testbed_hexagon_breathing --real drone1,drone4 --duration 150 --record
+# Real positions come from VICON: place real drones on their marks below.
+# See docs/DISTANCE_BREATHING.md for the test sequence and recorded quantities.
+
+simulation:
+  dt: 0.1
+  control_rate: 10.0
+  sim_rate: 10.0
+  bounds: 1.5
+
+drones:
+  - id: drone1
+    initial_position: [0.59, -0.19]
+    initial_velocity: [0.0, 0.0]
+    role: leader
+  - id: drone2
+    initial_position: [0.17, 0.90]
+    initial_velocity: [0.0, 0.0]
+    role: follower
+  - id: drone3
+    initial_position: [-0.24, 0.17]
+    initial_velocity: [0.0, 0.0]
+    role: follower
+  - id: drone4
+    initial_position: [-0.93, -0.06]
+    initial_velocity: [0.0, 0.0]
+    role: follower
+  - id: drone5
+    initial_position: [-0.58, -0.68]
+    initial_velocity: [0.0, 0.0]
+    role: follower
+  - id: drone6
+    initial_position: [0.34, -0.95]
+    initial_velocity: [0.0, 0.0]
+    role: follower
+
+algorithm:
+  name: DistanceFormation
+  params:
+    side_length: 0.7              # Nominal side, metres; HOLD FIXED in sweeps.
+    formation_center: [0.0, 0.0]  # Pivot used to scale the anchor target.
+    formation_rotation: 0.0
+    topology: octahedron         # HOLD FIXED: all ring AND chord targets scale.
+
+    # MAIN TEST VARIABLE: seconds per full expansion/contraction cycle.
+    # Current cycle is 20 s; compare 60, 30, 20, then 15 in simulation.
+    # Smaller = faster moving target, larger tracking demand.
+    breathing_period: 20.0
+
+    # SECOND TEST VARIABLE: fractional size swing, not metres.
+    # 0.15 / 0.7 = +/-21.43%: sides 0.55--0.85 m (30 cm peak-to-peak).
+    # Compare amplitudes at a FIXED period. 0 restores static behaviour.
+    breathing_amplitude: 0.2142857142857143
+
+    # Experiment timing, in controller seconds (starts after takeoff hold).
+    breathing_start_delay: 15.0   # Hold nominal size to form the hexagon first.
+    breathing_ramp_duration: 5.0  # Smoothly introduce motion; > 0.
+
+    # SECONDARY SWEEPS: change only one gain after the period/amplitude study.
+    gain_kp: 0.45                 # Formation correction strength.
+    gain_kv: 2.9                  # 1.2 -> 2.9; k*tau 0.81
+    max_accel: 3.5                # was 0.5, which clipped 49.5% here -- see header
+    mocap_noise: 0.0              # metres per axis on the real drone's VICON position
+
+    # Same anchor as the static hybrid. Its nominal vertex scales about
+    # formation_center: drone1's x target varies 0.55--0.85 m, y stays zero.
+    # Do not use centroid invariance as a success criterion with an anchor.
+    anchor: [drone1]
+    anchor_gain_kp: 0.4
+    anchor_gain_kd: 0.0
