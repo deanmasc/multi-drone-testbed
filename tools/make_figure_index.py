@@ -34,6 +34,18 @@ LADDERS = [
     dict(key='flocking_ladder', name='Flocking', accent='#1f8a63',
          blurb='The same flock, rescaled in time so k·τ drops from 1.3 to 0.4 '
                'without changing the lattice or the path.'),
+    dict(key='kuramoto_ladder', name='Kuramoto', accent='#c21d6e',
+         blurb='Four oscillators holding a 0.65 m ring, flown 6 Oct. Unlike '
+               'coverage and flocking this is NOT a time rescale — only the '
+               'own-velocity gain moves, 1.4 → 2.9 → 4.3, so the ring the law '
+               'asks for is identical on all three rungs and k·τ is the one '
+               'thing that changes.'),
+    dict(key='distance_ladder', name='Distance formation', accent='#6b5d0f',
+         blurb='A six-agent octahedron held by distances alone, flown 6 Oct. '
+               'Same gain ladder as Kuramoto (gain_kv 1.4 → 2.9 → 4.3). The '
+               'breathing these configs ask for never ran — see figure 7 — so '
+               'all three rungs held the static shape, which is what they are '
+               'scored against.'),
 ]
 
 # The two sweeps that hold k*tau FIXED and vary how hard the task is. They are
@@ -67,8 +79,9 @@ LEVER_SECTIONS = [
     dict(key='fleet_size', name='Fleet size', accent='#c2571a',
          blurb='One real drone against two, at 0 and 10 mm of noise — the only '
                'sweep in the corpus that changes how much of the fleet is a '
-               'real aircraft rather than a parameter. Flown 23 and 30 Sep at '
-               'beta = 2. One flight per cell.'),
+               'real aircraft rather than a parameter. One-real row 23 Sep, '
+               'two-real row reflown 6 Oct with the marks verified, beta = 2 '
+               'and identical gains throughout. One flight per cell.'),
     dict(key='flocking_sense', name='Sense range', accent='#1f8a63',
          blurb='A NULL RESULT, kept for the reason it failed. Both rungs turned '
                'out to be the same neighbour graph, so there was nothing there '
@@ -156,28 +169,35 @@ CAPTIONS = {
         'noise can only have biased them upwards, so their flatness is an '
         'understatement. The coverage objective cannot see a lever that '
         'doubles the tilt and puts the drone 18 cm off its designed position.'),
-    # --- fleet size (23 + 30 Sep) -------------------------------------------
+    # --- fleet size (23 Sep + 6 Oct reflight) -------------------------------
     'fleet_size/1_deviation.png': (
         'Fleet size: deviation with one real drone and with two',
-        'All four flights over a common 93 s window, and the 2x2 as paired '
-        'bars. At 0 mm the deviation goes 2.7 to 6.0 cm when a second aircraft '
-        'joins; at 10 mm, 8.3 to 11.4 cm. Black ticks are the sensor-only '
+        'All four flights over a common 125 s window, and the 2x2 as paired '
+        'bars. With no added noise a second aircraft costs little — 2.7 to '
+        '3.6 cm. At 10 mm it costs a great deal: 12.6 to 36.4 cm, and the '
+        'sensor-only null under that bar is only 3.8 cm, so what the second '
+        'aircraft adds is nine times the measurement. Black ticks are that '
         'null, because the recorder takes x and y from /state — the noisy '
-        'reading — so part of every 10 mm bar is the measurement, not the '
-        'aircraft.'),
+        'reading.'),
     'fleet_size/2_paths.png': (
         'Fleet size: the flown path against the designed one',
         'The 2x2 as paths, grey being each run\'s own noiseless replay. The '
         'faint orange trace in the bottom row is drone4, the second real '
-        'aircraft. The four designed patterns are within 15% of each other on '
-        'radius and speed, so the rows are comparable despite being flown a '
-        'week apart from different start positions.'),
+        'aircraft. The two-real row was reflown on 6 Oct with the marks '
+        'checked at engage (drone1 within 2 cm of its own), so for the first '
+        'time the pair holds its designed 0.40 m separation instead of '
+        'closing to nothing.'),
     'fleet_size/3_caveats.png': (
         'Fleet size: every measure, with the confound beside it',
-        'The cleanest signal is the second panel. Deviation of the three '
-        'SIMULATED agents — which never carry injected noise and never touch '
-        'the air — rises x1.75 at 0 mm and x1.70 at 10 mm when a second real '
-        'aircraft joins. The same factor at both noise levels says fleet size '
+        'The cleanest signal is the second panel. Deviation of the SIMULATED '
+        'agents — which never carry injected noise and never touch the air — '
+        'rises x1.2 at 0 mm and x4.2 at 10 mm when a second real aircraft '
+        'joins. They can only have moved because the noise reached them '
+        'through the consensus graph, which is the mechanism this sweep was '
+        'built to look for. Caveats on the right: the one-real row is 23 Sep '
+        'with drone1 on the wrong mark, the two-real row is 6 Oct with the '
+        'marks verified, and the two-real flights are vertically separated '
+        '(1.41 m and 0.75 m) because otherwise the pair collides. Fleet size '
         'acts separately from noise rather than amplifying it. Oscillation is '
         'unreliable here (the 2-real 0 mm flight contains a disturbance) and '
         'median tilt does not move. The two grey panels are the confound: the '
@@ -276,7 +296,22 @@ CAPTIONS = {
         'β=3: the wobble comes in bursts',
         'Below the threshold the ringing decays, but it is re-excited — bursts '
         'that are not simultaneous across drones.'),
-    # --- generic, applies to coverage and flocking -------------------------
+    # --- distance formation (6 Oct) ----------------------------------------
+    'distance_ladder/7_breathing.png': (
+        'The breathing these three flights were supposed to do, and did not',
+        'The configs ask for a 20 s, ±21.4% size cycle: the octahedron\'s mean '
+        'pair distance should swing about 22 cm once every 20 s. Measured, it '
+        'swings 0.01, 0.51 and 0.82 cm — 50 to 2000 times short. This is not '
+        'a tracking failure. The recorder caught it independently: '
+        'reference_valid is 0 on every row of all three records, so '
+        '/distance_formation/reference never arrived and every native metric '
+        'in those files is NaN (edge error here is recomputed from the logged '
+        'positions). One cause fits both symptoms — the node that flew was the '
+        'INSTALLED copy, and the install space predates commit bf915de '
+        '(22 Sep), which added breathing and the reference topic together. '
+        'Rebuild the workspace before reflying these.'),
+
+    # --- generic, applies to coverage, flocking, kuramoto and distance -----
     '*/1_summary.png': (
         'Wobble, the promised property, and the 4τ test',
         'Left: ripple per drone against the designed k·τ, filled = real. '
@@ -339,11 +374,41 @@ def key_cards():
     g = lambda k, r, f, sc=1.0, fmt='{:.0f}': _num(k, r, f, sc, fmt)
     return [
         ('key/1_threshold.png', 'The result, in one figure',
-         'Eleven flights, three algorithms, three unrelated papers, plotted against '
+         'Twenty flights, five unrelated control laws, plotted against '
          'a single number: the gain each law applies to a drone\'s own velocity, '
          'times the 0.28 s it takes that velocity to become thrust. Below '
          'k·τ ≈ 0.7 nothing oscillates. Above ≈ 1.0 everything does — and when it '
-         'does, the period is 4τ regardless of which paper the law came from.'),
+         'does, the period is 4τ regardless of which paper the law came from. '
+         'Kuramoto and distance formation were added on 6 Oct as a prediction '
+         'test: both were stepped straight onto the ladder at 1.4 / 2.9 / 4.3, '
+         'and both broke exactly where the other three said they would.'),
+        ('kuramoto_ladder/2_expected_vs_actual.png',
+         'Kuramoto: the same threshold, on a fourth paper\'s law',
+         f'Four oscillators holding a 0.65 m ring. Only the own-velocity gain '
+         f'changes between the three panels — the ring the law asks for is '
+         f'identical. At k·τ 0.39 the drone flies the circle '
+         f'{g("kuramoto_ladder", "q04", "design_gap")} cm off. At 0.81 it flies '
+         f'a rosette {g("kuramoto_ladder", "q08", "design_gap")} cm off, at '
+         f'1.20 a denser one {g("kuramoto_ladder", "q12", "design_gap")} cm off, '
+         f'ringing at 1.2 s against 4τ = 1.1 s. The ladder was designed before '
+         f'the flight from the other three algorithms\' numbers; nothing here '
+         f'was tuned afterwards.'),
+        ('kuramoto_ladder/3_promise.png',
+         'And the paper\'s own metric reports none of it',
+         f'The order parameter R is what a Kuramoto paper plots: 1.0 means the '
+         f'oscillators are perfectly in phase. Across a ladder that takes the '
+         f'aircraft from {g("kuramoto_ladder", "q04", "wobble", 100, "{:.1f}")} cm '
+         f'of oscillation to {g("kuramoto_ladder", "q12", "wobble", 100, "{:.1f}")} cm, '
+         f'29° of bank and 80% of its acceleration clipped, R reads '
+         f'{g("kuramoto_ladder", "q04", "promise_settled", 1, "{:.4f}")}, '
+         f'{g("kuramoto_ladder", "q08", "promise_settled", 1, "{:.4f}")} and '
+         f'{g("kuramoto_ladder", "q12", "promise_settled", 1, "{:.4f}")} — within '
+         f'1% of simulation on every rung. Phase synchronisation survives '
+         f'intact while the flight does not. Distance formation is the '
+         f'counter-example that makes the point sharper: its edge error does '
+         f'report the failure — 0.006 m at k·τ 0.39 against 0.107 m at 0.81, '
+         f'and 27× its own simulation at that rung. Whether the sim-to-hardware '
+         f'gap is visible at all depends on which metric the paper chose.'),
         ('coverage_ladder/2_expected_vs_actual.png',
          'Coverage: the quiet algorithm, made to ring on purpose',
          f'The same law at three speeds. At k·τ 0.34 and 0.67 the drone flies '
@@ -560,7 +625,7 @@ document.querySelectorAll('nav button').forEach(b=>{
 def build(embed=False):
     parts = [f'<style>{CSS}</style>',
              '<header class="top"><h1>Multi-drone testbed — flight figures</h1>',
-             '<span class="sub">what the delay does to three control laws</span>',
+             '<span class="sub">what the delay does to five unrelated control laws</span>',
              '<nav><button data-k="all" aria-pressed="true">Findings</button>']
     for L in LADDERS + LEVER_SECTIONS:
         parts.append(f'<button data-k="{L["key"]}">{L["name"]}</button>')

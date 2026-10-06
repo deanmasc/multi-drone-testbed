@@ -23,21 +23,32 @@ FIG = os.path.join(C.ROOT, 'docs', 'figures')
 # Three categorical hues, validated all-pairs for normal and CVD vision
 # (dataviz slots 1-3). Every point is also directly labelled, which is what the
 # contrast warning on the aqua obliges.
+# Five categorical hues, validated all-pairs for normal, deuteranopic and
+# protanopic vision (OKLab dE x100: normal >= 17, CVD >= 9). Marker shape and a
+# direct label on every point carry the identity as well, which is what the
+# 9-point CVD separation on the green/magenta pair obliges.
 ALGOS = [
-    ('trochoidal_ladder', 'Trochoidal', '#2a78d6', 'o'),
-    ('coverage_ladder', 'Coverage', '#eb6834', 's'),
+    ('trochoidal_ladder', 'Trochoidal', '#d2601c', 'o'),
+    ('coverage_ladder', 'Coverage', '#2a78d6', 's'),
     ('flocking_ladder', 'Flocking', '#1baf7a', '^'),
+    ('kuramoto_ladder', 'Kuramoto', '#c21d6e', 'D'),
+    ('distance_ladder', 'Distance formation', '#6b5d0f', 'v'),
 ]
-BAND = (0.67, 1.01)          # quiet below, sustained above -- see PROJECT_AIM 15f
+# Quiet below, sustained above. Narrowed from (0.67, 1.01) on 2026-10-06: the
+# kuramoto and distance-formation k08 rungs both sit at k*tau 0.81 and both
+# oscillate hard (17.9 and 22.9 cm), so the onset is bracketed by c2 at 0.67
+# (1.9 cm, the highest quiet rung) and those two. See PROJECT_AIM 16g.
+BAND = (0.67, 0.81)
 
 # Rungs that would otherwise print on top of a neighbour or the band caption.
-LABEL_XY = {'c3': (8, -11), 's1': (8, -4)}
+LABEL_XY = {'c3': (5, -13), 's1': (8, -4), 'q08': (-27, -3), 'h08': (7, 1),
+            'q12': (-27, -1), 'h12': (7, 2)}
 LABEL_DEFAULT = (8, -3)
 # Rungs that land on the floor of the linear axis: they are labelled in the
 # inset instead, where there is room to tell them apart.
-INSET_RUNGS = ('r1', 'c1', 's3', 'r2', 's2', 'c2')
+INSET_RUNGS = ('r1', 'c1', 's3', 'r2', 's2', 'c2', 'q04', 'h04')
 INSET_XY = {'r1': (-6, -15), 'c1': (-4, 8), 's3': (3, 6), 'r2': (-20, -3),
-            's2': (3, 6), 'c2': (5, 2)}
+            's2': (3, 6), 'c2': (5, 2), 'q04': (4, -10), 'h04': (4, 3)}
 
 
 def points():
@@ -65,14 +76,18 @@ def main():
 
     # -- the result ----------------------------------------------------------
     ax[0].axvspan(*BAND, color='#f0ead8', zorder=0)
-    ax[0].annotate('the threshold\nis in here', (np.mean(BAND), 0.80),
-                   xycoords=('data', 'axes fraction'), ha='center', va='top',
-                   fontsize=8, color=C.MUTED)
+    ax[0].annotate('the threshold\nis in here', (1.75, 0.52),
+                   xytext=(1.75, 0.52), xycoords=('data', 'axes fraction'),
+                   ha='left', va='center', fontsize=8, color=C.MUTED)
+    ax[0].annotate('', (np.mean(BAND), 0.52), xytext=(1.72, 0.52),
+                   xycoords=('data', 'axes fraction'),
+                   arrowprops=dict(arrowstyle='->', color=C.MUTED, lw=0.9))
     seen = set()
     for p in P:
         ax[0].plot(p['k_tau'], p['wobble'] * 100, p['marker'], ms=9,
                    color=p['colour'], zorder=3, alpha=0.95,
-                   label=p['algo'] if p['algo'] not in seen else None)
+                   label=p['algo'].replace('Distance formation', 'Distance form.')
+                   if p['algo'] not in seen else None)
         seen.add(p['algo'])
     done = set()
     for p in P:                                   # one label per rung
@@ -83,11 +98,12 @@ def main():
                        textcoords='offset points',
                        xytext=LABEL_XY.get(p['rung'], LABEL_DEFAULT),
                        fontsize=8, color=C.INK)
-    ax[0].set_ylim(bottom=0)
+    # Headroom so the legend block never lands on a labelled point.
+    ax[0].set_ylim(0, max(q['wobble'] * 100 for q in P) * 1.22)
     ax[0].set_xlabel('k · τ    (own-velocity gain × loop delay)')
     ax[0].set_ylabel('radius of oscillation (cm)')
     ax[0].set_title('One number predicts which flights oscillate')
-    ax[0].legend(fontsize=8.5, loc='center right')
+    ax[0].legend(fontsize=8.5, loc='upper right', ncol=1, framealpha=0.92)
 
     # The linear axis is the point -- below the band everything is on the floor.
     # That also makes the five quiet rungs indistinguishable, so they get an
@@ -127,9 +143,15 @@ def main():
     ax[1].set_title('When it does oscillate, the delay sets the period')
 
     n = len({p['rung'] for p in P})
-    WORD = {8: 'Eight', 9: 'Nine', 10: 'Ten', 11: 'Eleven', 12: 'Twelve',
-            13: 'Thirteen', 14: 'Fourteen', 15: 'Fifteen', 16: 'Sixteen'}
-    fig.suptitle(f'{WORD.get(n, n)} flights, three algorithms, three papers',
+    algos = len({p['algo'] for p in P})
+    WORD = {3: 'Three', 4: 'Four', 5: 'Five', 8: 'Eight', 9: 'Nine', 10: 'Ten',
+            11: 'Eleven', 12: 'Twelve', 13: 'Thirteen', 14: 'Fourteen',
+            15: 'Fifteen', 16: 'Sixteen', 17: 'Seventeen', 18: 'Eighteen',
+            19: 'Nineteen', 20: 'Twenty'}
+    w = WORD.get(algos, algos)
+    # "laws", not "papers": two of the five have no citation recorded in the
+    # repo yet (PROJECT_AIM 16e). Change it back once they are supplied.
+    fig.suptitle(f'{WORD.get(n, n)} flights, {w.lower()} unrelated control laws',
                  y=1.02, fontsize=12, fontweight='bold')
     fig.savefig(os.path.join(out, '1_threshold.png'))
     plt.close(fig)

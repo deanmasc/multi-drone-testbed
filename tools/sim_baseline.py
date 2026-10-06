@@ -62,6 +62,19 @@ def run(cfg, duration, rate=None):
               for i in ids}
         out = algo.compute_controls(ds, dt)
         breathing = isinstance(metrics, M.DistanceFormationMetrics) and metrics.breathing.enabled
+        # KuramotoMetrics scores phase synchronisation, so it needs the phases
+        # and their ages. Handed nothing it returns NaN for every phase column
+        # -- which silently removed the simulation reference from the kuramoto
+        # ladder until 6 Oct. There is no transport here, so the ages are 0.
+        kur = isinstance(metrics, M.KuramotoMetrics)
+        if kur:
+            ph = algo.get_phases()
+            zeros = [0.0] * len(ids)
+            row = metrics.full_row(t, np.array([state[i][:2] for i in ids]),
+                                   np.array([state[i][2:] for i in ids]),
+                                   phases=[ph.get(i, float('nan')) for i in ids],
+                                   phase_ages=zeros, state_ages=zeros, active=True)
+            pos = np.array([state[i][:2] for i in ids])
         if breathing:
             # Score the state the controller actually saw against that tick's
             # reference, before integrating. This also records the true t=0.
@@ -72,7 +85,7 @@ def run(cfg, duration, rate=None):
         for i in ids:
             state[i] = step(state[i], out[i].acceleration, dt)
 
-        if not breathing:
+        if not breathing and not kur:
             pos = np.array([state[i][:2] for i in ids])
             vel = np.array([state[i][2:] for i in ids])
             row = metrics.full_row(t, pos, vel)   # z is nan: no hardware here

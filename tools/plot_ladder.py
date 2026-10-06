@@ -45,6 +45,32 @@ LADDERS = {
               # config. s2 = half speed, s3 = a third.
               ('s1', 'flocking_20260916_164800.txt', 'testbed_flocking_hybrid.yaml')],
     ),
+    # 6 Oct 2026. Unlike coverage and flocking these two are NOT a time
+    # rescale: only the own-velocity gain moves, so k*tau is stepped directly
+    # (1.4 / 2.9 / 4.3 against tau = 0.28 s) and the trajectory the law asks
+    # for is identical on every rung. That makes them the cleanest test of the
+    # threshold in the corpus -- nothing else about the task changes.
+    'kuramoto': dict(
+        algo='KuramotoFormation', duration=100.0, promise='order_R',
+        kind='own-velocity gain ladder',
+        runs=[('q04', 'kuramotoformation_20261006_145922.txt', 'testbed_kuramoto_k04.yaml'),
+              ('q08', 'kuramotoformation_20261006_150306.txt', 'testbed_kuramoto_k08.yaml'),
+              ('q12', 'kuramotoformation_20261006_150720.txt', 'testbed_kuramoto_k12.yaml')],
+    ),
+    'distance': dict(
+        algo='DistanceFormation', duration=60.0, promise='edge_rms',
+        kind='own-velocity gain ladder',
+        # The hardware ran the STATIC shape: the installed node predated the
+        # breathing code, so no reference was ever published and the recorder
+        # NaN'd its own metrics. edge_rms is recomputed from positions here and
+        # the simulation reference is run with breathing off, which is what the
+        # flights were actually commanded against. See fig 7.
+        sim_override={'breathing_amplitude': 0.0},
+        recompute_promise=True,
+        runs=[('h04', 'distanceformation_20261006_154341.txt', 'testbed_hexagon_breathing_k04.yaml'),
+              ('h08', 'distanceformation_20261006_154826.txt', 'testbed_hexagon_breathing_k08.yaml'),
+              ('h12', 'distanceformation_20261006_155328.txt', 'testbed_hexagon_breathing_k12.yaml')],
+    ),
 }
 
 
@@ -63,11 +89,16 @@ def analyse(label, rec_name, cfgname, spec):
     Pw, tw = P[sl], rec['t'][sl]
     clamp = float(rec['params'].get('max_accel', 0.5))
 
-    U, Uc = C.replay(spec['algo'], rec['params'], rec['ids'], Pw, w['t_start'], len(Pw))
+    # The replayed law must be the law the NODE ran. For the distance ladder
+    # that is the static shape: the installed copy predated the breathing code,
+    # so replaying a breathing reference would attribute the aircraft's error
+    # to a target it was never given.
+    replay_params = dict(rec['params'], **(spec.get('sim_override') or {}))
+    U, Uc = C.replay(spec['algo'], replay_params, rec['ids'], Pw, w['t_start'], len(Pw))
     Acc = np.gradient(np.gradient(Pw, C.DT, axis=0), C.DT, axis=0)
     V = np.gradient(Pw, C.DT, axis=0)
     wb = C.wobble(Pw)
-    ks = C.own_velocity_gain(spec['algo'], rec['params'], P, sl)
+    ks = C.own_velocity_gain(spec['algo'], replay_params, P, sl)
 
     drones = {}
     for j, i in enumerate(rec['ids']):
@@ -85,9 +116,16 @@ def analyse(label, rec_name, cfgname, spec):
             speed_max=float(np.max(np.hypot(*V[:, j].T))),
         )
 
-    sim = C.sim_of(cfgname, spec['duration'])
+    sim = C.sim_of(cfgname, spec['duration'], spec.get('sim_override'))
     promise = C.col(rec, spec['promise'])
     promise_logged = None
+    if spec.get('recompute_promise'):
+        # Every native metric in these records is NaN (see the LADDERS note).
+        promise_logged = promise.copy() if promise is not None else None
+        e_rms, d_min_s, shape = C.recompute_distance_edges(rec, P)
+        promise = e_rms
+        rec['_d_min'] = d_min_s
+        rec['_shape'] = shape
     if spec['algo'] == 'Coverage' and promise is not None:
         # The recorder evaluates the coverage cost against the moving hotspot at
         # ITS OWN t, which starts when the recorder starts. The algorithm's
@@ -162,18 +200,26 @@ def fig_summary(runs, algo, spec, out):
 
     # 2: the promised property, hardware vs its own simulation
     lab = {'H': 'coverage cost H (settled)',
-           'lattice_err': 'lattice error (settled, m)'}[spec['promise']]
+           'lattice_err': 'lattice error (settled, m)',
+           'order_R': 'order parameter R (settled)',
+           'edge_rms': 'edge-length error (settled, m)'}[spec['promise']]
     for k, r in enumerate(runs):
         if 'promise_settled' not in r:
             continue
         ax[1].bar(k - 0.19, r['promise_settled'], 0.36, color=cc[r['label']],
                   label='hardware' if k == 0 else None)
-        ax[1].bar(k + 0.19, r['promise_sim_settled'], 0.36, color=C.SIM,
-                  label='simulation' if k == 0 else None)
-        gap = r['promise_settled'] / r['promise_sim_settled'] - 1
-        ax[1].annotate(f'{gap*100:+.0f}%', (k, max(r['promise_settled'],
-                       r['promise_sim_settled'])), ha='center', va='bottom',
-                       fontsize=7.5, color=C.MUTED)
+        sim_ok = np.isfinite(r.get('promise_sim_settled', float('nan')))
+        if sim_ok:
+            ax[1].bar(k + 0.19, r['promise_sim_settled'], 0.36, color=C.SIM,
+                      label='simulation' if k == 0 else None)
+            gap = r['promise_settled'] / r['promise_sim_settled'] - 1
+            ax[1].annotate(f'{gap*100:+.0f}%', (k, max(r['promise_settled'],
+                           r['promise_sim_settled'])), ha='center', va='bottom',
+                           fontsize=7.5, color=C.MUTED)
+        else:
+            ax[1].annotate(f"{r['promise_settled']:.4g}",
+                           (k - 0.19, r['promise_settled']), ha='center',
+                           va='bottom', fontsize=7.5, color=C.MUTED)
     ax[1].set_xticks(x, [rung_label(r) for r in runs])
     ax[1].set_ylabel(lab)
     ax[1].set_title('Does the promise survive?')
@@ -203,8 +249,9 @@ def fig_summary(runs, algo, spec, out):
     ax[2].set_title('The ripple is delay-timed')
     ax[2].legend(fontsize=7.5)
 
-    fig.suptitle(f'{spec["algo"]} speed ladder — one real drone, '
-                 f'{len(runs)} rungs', y=1.04, fontsize=11, fontweight='bold')
+    fig.suptitle(f'{spec["algo"]} {spec.get("kind", "speed ladder")} — '
+                 f'one real drone, {len(runs)} rungs',
+                 y=1.04, fontsize=11, fontweight='bold')
     fig.savefig(os.path.join(out, '1_summary.png'))
     plt.close(fig)
 
@@ -274,17 +321,22 @@ def fig_promise(runs, algo, spec, out):
     cc = _cols(runs, algo)
     fig, axes = plt.subplots(1, len(runs), figsize=(3.9 * len(runs), 3.2),
                              squeeze=False, sharey=True)
-    lab = {'H': 'coverage cost H', 'lattice_err': 'lattice error (m)'}[spec['promise']]
+    lab = {'H': 'coverage cost H', 'lattice_err': 'lattice error (m)',
+           'order_R': 'order parameter R  (1 = perfectly in phase)',
+           'edge_rms': 'edge-length error (m)'}[spec['promise']]
     for k, r in enumerate(runs):
         a = axes[0][k]
-        if r.get('promise_logged') is not None:
+        if r.get('promise_logged') is not None and np.isfinite(r['promise_logged']).any():
             a.plot(r['t'], r['promise_logged'], color=cc[r['label']], lw=1.0,
                    alpha=0.35, ls=':',
                    label="as logged (recorder's clock)")
         if r['promise'] is not None:
             a.plot(r['t'], r['promise'], color=cc[r['label']], lw=1.6,
                    label='hardware' + (", algorithm's clock"
-                                       if r.get('promise_logged') is not None else ''))
+                                       if (r.get('promise_logged') is not None
+                                           and np.isfinite(r['promise_logged']).any())
+                                       else ', recomputed from positions'
+                                       if spec.get('recompute_promise') else ''))
         if r['sim_promise'] is not None:
             a.plot(r['sim']['t'] - r['sim']['t'][0], r['sim_promise'], lw=1.6,
                    color=C.SIM, ls='--', label='simulation, same config')
@@ -359,7 +411,8 @@ def fig_delay(runs, algo, spec, out):
     ax[1].set_xticks(np.arange(len(runs)), [rung_label(r) for r in runs])
     ax[1].set_ylabel('measured loop delay τ (s)')
     ax[1].set_title('Delay does not change with the rung')
-    ax[1].legend(fontsize=7.5, loc='lower right')
+    ax[1].legend(fontsize=7.5, loc='upper center',
+                 bbox_to_anchor=(0.5, -0.06), ncol=2)
     fig.savefig(os.path.join(out, '5_delay.png'))
     plt.close(fig)
 
@@ -418,6 +471,75 @@ def fig_command(runs, algo, spec, out):
     plt.close(fig)
 
 
+def fig_breathing(runs, algo, spec, out):
+    """Was the size cycle the config asked for ever flown? No.
+
+    The config commands a 20 s, +/-21.4% size cycle: the octahedron's mean pair
+    distance should swing ~22 cm about its own mean once every 20 s. Left: the
+    commanded profile against what the fleet's geometry actually did. Right:
+    the amplitude at 0.05 Hz, measured, against what was asked for. The three
+    bars are two to three orders of magnitude short, which is not a tracking
+    failure -- it is the cycle never being commanded. The recorder caught it
+    independently: reference_valid is 0 on every row of all three records,
+    i.e. /distance_formation/reference never arrived, so every native metric in
+    those files is NaN. One cause fits both: the node that flew was the
+    INSTALLED copy of algorithm_manager/distance_formation, and the install
+    space predated commit bf915de (22 Sep), which added breathing and the
+    reference topic together. Rebuild the workspace before reflying these.
+    """
+    cc = _cols(runs, algo)
+    fig, ax = plt.subplots(1, 2, figsize=(11.4, 3.9),
+                           gridspec_kw=dict(width_ratios=[1.75, 1]))
+    asked, got = [], []
+    for k, r in enumerate(runs):
+        P, t = r['P'], r['t']
+        pairs = [(a, b) for a in range(P.shape[1]) for b in range(a + 1, P.shape[1])]
+        dd = np.mean([np.hypot(*(P[:, a] - P[:, b]).T) for a, b in pairs], axis=0)
+        ax[0].plot(t, (dd / np.mean(dd) - 1) * 100, lw=1.5, color=cc[r['label']],
+                   label=f"{rung_label(r, two_line=False)}: flown")
+        ref = C.breathing_reference(r['rec_obj'], t)
+        if ref is not None and k == 0:
+            ax[0].plot(t, (ref - 1) * 100, lw=2.0, ls='--', color=C.DESIGN,
+                       label='what the config commanded')
+        n = len(dd)
+        A = np.abs(np.fft.rfft((dd - dd.mean()) * np.hanning(n))) / n * 4
+        f = np.fft.rfftfreq(n, C.DT)
+        got.append(float(A[np.argmin(abs(f - 1 / 20.0))]) * 100)
+        amp = float(r['rec_obj']['params'].get('breathing_amplitude', 0.0))
+        asked.append(amp * float(np.mean(dd)) * 100)
+    ax[0].axhline(0, color=C.MUTED, lw=0.6)
+    ax[0].set_xlabel('seconds since algorithm start')
+    ax[0].set_ylabel('mean pair distance,\n% from its own mean')
+    ax[0].set_title('The 20 s size cycle, commanded and flown')
+    ax[0].legend(fontsize=7.5, ncol=2)
+
+    x = np.arange(len(runs))
+    ax[1].bar(x - 0.19, asked, 0.36, color=C.DESIGN, label='commanded by the config')
+    ax[1].bar(x + 0.19, got, 0.36,
+              color=[cc[r['label']] for r in runs], label='measured in the air')
+    for k in x:
+        ax[1].annotate(f'{got[k]:.2f}', (k + 0.19, got[k]), ha='center',
+                       va='bottom', fontsize=7.5, color=C.MUTED)
+    ax[1].set_yscale('log')
+    ax[1].set_xticks(x, [r['label'] for r in runs])
+    ax[1].set_ylabel('amplitude at 0.05 Hz (cm, log)')
+    ax[1].set_title('Short by a factor of 50 to 2000')
+    ax[1].legend(fontsize=7.5, loc='upper center',
+                 bbox_to_anchor=(0.5, -0.06), ncol=2)
+
+    fig.suptitle('DistanceFormation: the breathing never happened',
+                 y=1.04, fontsize=11, fontweight='bold')
+    fig.text(0.5, 0.965, 'reference_valid = 0 on every row of all three '
+             'records: the reference topic never arrived, so this is a stale '
+             'install space, not a tracking failure',
+             ha='center', fontsize=8.5, color=C.MUTED)
+    fig.savefig(os.path.join(out, '7_breathing.png'))
+    plt.close(fig)
+    print('  breathing at 0.05 Hz: commanded '
+          + ', '.join(f'{a:.1f}' for a in asked)
+          + ' cm   measured ' + ', '.join(f'{g:.2f}' for g in got) + ' cm')
+
+
 def table(runs, spec):
     print(f"\n{spec['algo']} ladder — {len(runs)} rung(s)\n")
     hdr = (f"{'rung':>5} {'drone':>7} {'':>5} {'k':>5} {'k·τ':>5} {'τ meas':>7} "
@@ -431,10 +553,11 @@ def table(runs, spec):
                   f"{d['clip']*100:5.0f}% {d['tilt_med']:5.1f}° {d['speed_med']:5.2f}"
                   f"{'   (τ weak, corr %.2f)' % d['xc_max'] if d['xc_max'] < 0.5 else ''}")
         if 'promise_settled' in r:
+            sim = r['promise_sim_settled']
+            vs = (f"vs sim {sim:.4f} ({r['promise_settled']/sim-1:+.1%})"
+                  if np.isfinite(sim) else 'sim column not logged')
             print(f"{'':>5} {spec['promise']} settled {r['promise_settled']:.4f} "
-                  f"vs sim {r['promise_sim_settled']:.4f} "
-                  f"({r['promise_settled']/r['promise_sim_settled']-1:+.1%}), "
-                  f"window {r['window']:.0f} s, shared-mode ripple "
+                  f"{vs}, window {r['window']:.0f} s, shared-mode ripple "
                   f"{r['shared']*100:.2f} cm")
     print()
 
@@ -476,6 +599,8 @@ def main():
     fig_wobble_loops(runs, a.algo, spec, out)
     fig_delay(runs, a.algo, spec, out)
     fig_command(runs, a.algo, spec, out)
+    if any(C.breathing_reference(r['rec_obj'], r['t']) is not None for r in runs):
+        fig_breathing(runs, a.algo, spec, out)
 
     summary = {r['label']: {k: v for k, v in r.items()
                             if k in ('rec', 'cfg', 'window', 'shared',

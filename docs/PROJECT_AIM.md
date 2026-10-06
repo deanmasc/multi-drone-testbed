@@ -1622,6 +1622,11 @@ what the flights show.
 
 ### 15f. Where the threshold sits now
 
+> **Superseded by §16g (2026-10-06).** The band below is bracketed as 0.67–1.01
+> because no rung had been flown between them. Kuramoto and distance formation
+> were later flown at k·τ 0.81 and both oscillate hard, so **the onset band is
+> now 0.67–0.81**. Everything else in this section stands.
+
 Fourteen flights, three algorithms, three papers, one number:
 
 | Algorithm | k·τ | Wobble, real drone | Verdict |
@@ -1955,3 +1960,360 @@ answering different questions.
 these differences has an error bar. The ladder is steep enough that scatter is
 unlikely to explain it — 2.7 to 15.4 cm is not a plausible session wobble — but
 repeats inside one session remain item 1 of 15i.
+
+---
+
+## 16. Hardware findings, 29 September – 6 October 2026
+
+Four sessions. 29 Sep put the sensor-noise lever of 15k onto flocking and
+coverage. 30 Sep attempted two real drones and failed for a reason that turned
+out to be a placement fault running back to 23 Sep. 6 Oct flew two new
+algorithms onto the k·τ ladder and reflew the two-drone pair with the marks
+checked. One of the findings below is a defect in **my own analysis**, not in
+the hardware, and it changes how 15k should be read, so it comes first.
+
+### 16a. The recorder logs the *noisy* position channel
+
+`tools/metrics_recorder.py` takes `x` and `y` from `/<drone>/state`. For a real
+drone that topic is `mocap_state_node`'s **output**, which is where the
+artificial noise is injected. Only `z` and `tilt` come from `/poses`, upstream
+of the injection. So on every noise-ladder rung, a measure derived from the
+logged position carries the injection inside it as well as whatever the
+aircraft did.
+
+How much it matters depends on how many times the series is differentiated:
+
+| quantity | noise multiplier at 10 Hz | verdict |
+|---|---|---|
+| position / deviation | ×1 | usable; ~1 cm of a 10 mm rung's reading is the sensor |
+| oscillation in the 0.6–1.5 Hz band | ×1, but band-limited | usable **with a null** |
+| flown speed | ×14 (simple difference) | **unusable** |
+| achieved acceleration | ×245 (second difference) | **unusable** |
+| tilt (from `/poses`) | ×1, injection never touches it | **clean** |
+
+Three consequences, all now applied:
+
+1. **A null model.** Every noise figure built after this discovery carries, for
+   each rung, what the *control* flight's own trajectory would read if it were
+   re-measured through that rung's noise — 200 draws, `add_nulls()` in
+   `tools/plot_noise_ladder_algos.py`. A bar sitting at its null is measuring
+   the injection. The gap above the null is the aircraft. Report the gap, not
+   the bar.
+2. **Speed and acceleration panels were deleted**, not corrected. Tilt replaced
+   them, because it is the one motion witness the injection cannot reach.
+3. **15k's "median flown speed 0.035 → 0.117 m/s" row is contaminated** and
+   should not be quoted. Its deviation rows survive: at ×1 the inflation is
+   about a centimetre against a 15.4 cm top rung. The qualitative claim of 15k
+   — a physical-layer lever opens a gap to simulation that an in-law parameter
+   cannot — is unaffected.
+
+This is the second time an apparent hardware result has turned out to be an
+instrumentation artefact (the first was 15d, the coverage-cost clock). Both
+were caught by asking what a *null* flight would have read. That question
+belongs in the method section of the report.
+
+### 16b. 29 September: the same lever on flocking and coverage
+
+Flocking at k·τ 0.64 (`testbed_flocking_hybrid_s2_n0/n2/n5/n10.yaml`, records
+`flocking_20260929_1{43348,44718,45234,50050}.txt`, 124 s window) and coverage
+at k·τ 0.67 (`testbed_coverage_c2_n0/n2/n5/n10/n20.yaml`, records
+`coverage_20260929_15{1743,2418,2810,3141,3520}.txt`, 112 s window, with a 20 mm
+fifth rung because coverage is the quiet algorithm). One real drone, drone1.
+Figures `docs/figures/noise_ladder_flocking/` and `.../noise_ladder_coverage/`,
+built by `tools/plot_noise_ladder_algos.py --algo flocking|coverage`.
+
+**Coverage.** Deviation from the designed configuration, RMS: 3.6 / 10.3 / 8.2 /
+10.5 / **18.3** cm against a sensor-only null of 3.6 / 3.6 / 3.7 / 3.9 / 4.6 cm.
+Oscillation 0.59 → 4.87 cm against a null of 0.59 → 1.29 cm, so ×3.8 above what
+the injection alone explains. Median tilt 3.4 → 6.7° on the clean channel. The
+ladder is not monotone in the middle — the 2 mm rung reads higher than 5 mm —
+which is what one flight per rung looks like; the ends are far enough apart
+(×5.1, ×4.0 above null) that the trend is not in doubt.
+
+**And none of it appears in the algorithm's own metrics.** Mean distance to own
+Voronoi centroid, worst distance, the locational cost H, and the fraction of
+ticks where H rose, over the whole 0–20 mm ladder: spreads of **2.0%, 2.3%, 3.6%
+and 8.6%** of their own means, with no trend. Since all four are computed from
+the *noisy* positions, the injection can only have biased them upward, so their
+flatness is a conservative statement.
+
+**Flocking.** Deviation 5.5 / 4.8 / 9.1 / **11.1** cm against a null of 5.5 /
+5.5 / 5.6 / 5.7 — only ×1.95 above null, so flocking's deviation reading is
+roughly half injection. Oscillation 0.86 → 1.24 cm against a null of 0.86 →
+1.03, i.e. ×1.20 — **for flocking the ripple column is essentially all
+artefact**, and must not be quoted as an oscillation result. Median tilt is flat
+and if anything falls (2.5 → 2.1°). Four theorem metrics: lattice error 11.2 →
+10.0 cm (spread 10.5%, and the 10 mm rung reads *better* than the control),
+d_min 58 → 56 cm (2.7%), connectivity 99.4% on every rung. The fourth,
+`vel_spread`, appears to triple — and is an **artefact**: it reads the
+least-squares velocity estimate, in which the 10-sample fit has already
+multiplied the position noise by 11. At 10 mm the noise alone puts ≈ 0.11 m/s
+into drone1's velocity, which is more than the whole rise the panel shows.
+
+**Two different failure modes, and the difference is mechanical.** Coverage's
+deviation is a *diffusion*: the control is flat across the flight (3.7 / 3.6 /
+3.6 cm over thirds) and every noisy rung climbs within it (20 mm: 12.1 / 12.9 /
+26.4 cm). Lloyd/Voronoi stabilises the *relative* configuration, not
+absolute position, so a noise kick is never restored — the simulated agents
+drift 3.2 / 9.0 / 6.4 / 8.8 / 12.6 cm despite carrying no noise of their own.
+Flocking's deviation is *stationary* (5.6 / 5.8 / 5.1 across thirds on the
+control) because the γ-agent pins the flock to a moving reference.
+
+**The claim this supports.** Sensor noise degrades the flight on every clean
+measure available, and of the eight metrics the two source papers would plot,
+**eight report nothing** — four for coverage, four for flocking once
+`vel_spread` is identified as an artefact. Whether a sim-to-hardware gap is
+visible at all depends on which quantity the paper chose to plot. That is a
+stronger and more interesting statement than "hardware is worse than
+simulation", and it is the one the report should lead the noise chapter with.
+
+### 16c. The placement fault: drone1 on drone4's mark, 23 Sep – 30 Sep
+
+Two real drones kept colliding on 30 Sep. The cause was not the control law.
+Checked at engage across every trochoidal record:
+
+| session | where the real drone1 actually started |
+|---|---|
+| 16 Sep, 2 drones | 1.0 and 3.6 cm from its own mark — **correct** |
+| 23 Sep, noise ladder | 40–48 cm off, 5–15 cm from **drone4's** mark |
+| 30 Sep, 2 drones | 43–48 cm off, 7–13 cm from drone4's mark |
+| 6 Oct, 2 drones | 0.6 and 2.1 cm from its own mark — **corrected** |
+
+drone1's configured mark in `testbed_fig4*.yaml` is (0.235, −0.132), the
+negative-y one; drone4's is (0.179, 0.219). The aircraft was going to the
+positive-y mark. Four independent checks rule out the alternatives: row 0 has
+z = 0.018 m, so it is the *placement* and not drift; a two-point common
+translation fit leaves 40.8 cm of residual as-assigned against 5.3 cm swapped,
+which rules out a frame offset; simulating from the *actual* start positions
+reproduces the flown separation to 0.05 m RMS while the designed start predicts
+a rigid 0.355 m; and the marks are read from each record's own header, so a
+config edit cannot explain it.
+
+**What this does and does not invalidate.**
+
+- The 23 Sep trochoidal noise ladder (15k) keeps its numbers. `plot_noise_ladder.py`
+  seeds its design replay from each run's *actual* engage positions, so
+  deviation is always "distance from where the law wanted *this* start to go".
+  What changes is the wording: "the designed trochoidal pattern" in those
+  figures means the pattern that start produces, **not** the published fig. 4
+  pattern.
+- The separation note in `testbed_fig4.yaml` — "drone1–drone4 is 0.354 m,
+  essentially constant, the only safe pair for two real drones" — is true of the
+  configured marks and false of what was flown. As flown the pair's designed
+  separation was 15 cm median, 6 cm minimum. The pair was never safe. Do not
+  quote 0.354 m without checking a record's engage positions.
+- Every one-real-drone result is unaffected in substance, because a single
+  aircraft starting 41 cm from its mark simply flies a different trochoid, and
+  every comparison in this project is against that run's own replay.
+
+The check is one line and belongs in the pre-flight list: compare drone1's row-0
+position against `cfg['drones'][0]['initial_position']`.
+
+### 16d. Fleet size: one real aircraft against two
+
+The only sweep in the corpus that changes **how much of the fleet is a physical
+aircraft** rather than changing a parameter. Trochoidal β = 2 (k·τ 0.56),
+0 and 10 mm of noise, one real drone against two. Identical α, β, κ, θ,
+`max_accel` 3.5 and `velocity_window` 10 in all four records. One-real row
+23 Sep; two-real row **reflown 6 Oct with the marks verified**, superseding the
+30 Sep attempt. Common 125 s window from engage + 2 s. `tools/plot_fleet_size.py`,
+figures `docs/figures/fleet_size/`.
+
+| | 1 real, 0 mm | 1 real, 10 mm | 2 real, 0 mm | 2 real, 10 mm |
+|---|---|---|---|---|
+| Deviation of the primary real drone, RMS | 2.7 cm | 12.6 cm | 3.6 cm | **36.4 cm** |
+| … its sensor-only null | 2.7 | 3.1 | 3.6 | 3.8 |
+| Deviation of the **simulated** agents | 1.4 cm | 4.4 cm | 1.7 cm | **18.4 cm** |
+| Median tilt (clean channel) | 1.5° | 2.4° | 4.9° | 4.4° |
+| d1–d4 separation, median / min | 0.15 / 0.06 m | 0.09 / 0.00 m | 0.40 / 0.32 m | 0.41 / 0.13 m |
+| Designed pattern radius | 24.9 cm | 22.3 cm | 26.0 cm | 27.8 cm |
+
+- **At 0 mm a second aircraft costs almost nothing** (2.7 → 3.6 cm, ×1.3).
+  **At 10 mm it costs a great deal** (12.6 → 36.4 cm, ×2.9), against a null of
+  3.8 cm — so what the second aircraft adds is about nine times the measurement
+  floor. Fleet size and sensor noise interact; neither alone predicts the pair.
+- **The simulated agents moved too**, 4.4 → 18.4 cm at 10 mm. They carry no
+  injected noise and never touch the air, so the only route is the consensus
+  coupling: two corrupted neighbours instead of one. This is the cleanest
+  evidence in the corpus that measurement error propagates through the
+  interaction graph, and it is a graph-theoretic statement the report can make.
+- **The two-real flights are vertically separated** — drone1 at 1.41–1.47 m,
+  drone4 at 0.75 m — because without the split the pair closes to 6–16 cm
+  horizontally and they hit each other. That is a real difference between the
+  rows, and it means the two-drone cell has an aircraft in another's downwash
+  column some of the time. It is a confound, and it is also the only way the
+  flight happens at all.
+- **Caveats:** one flight per cell; the rows are two weeks apart; the one-real
+  row carries the 16c placement fault while the two-real row does not, so the
+  designed patterns differ (radius 24.9 / 22.3 / 26.0 / 27.8 cm, a spread of
+  about 12%). Directional evidence that fleet size matters — not a coefficient.
+
+### 16e. 6 October: Kuramoto and distance formation, as a prediction test
+
+Up to here the k·τ threshold was fitted to three algorithms. On 6 Oct two more
+were flown **with the rungs chosen in advance from the other three's numbers,
+and nothing tuned afterwards**. That makes this an out-of-sample test rather
+than another fit, which is the strongest form the central claim has taken.
+
+Both ladders step the own-velocity gain directly — `velocity_gain` for Kuramoto,
+`gain_kv` for distance formation — at **1.4 / 2.9 / 4.3**, i.e. k·τ 0.39 / 0.81 /
+1.20 against τ = 0.28 s. Unlike the coverage and flocking ladders this is **not**
+a time rescale: the trajectory the law asks for is identical on all three rungs,
+so k·τ is the only thing that moves. `max_accel` 3.5 and `mocap_noise` 0
+throughout. One real drone, drone1.
+
+Configs `testbed_kuramoto_k04/k08/k12.yaml` and
+`testbed_hexagon_breathing_k04/k08/k12.yaml`; records
+`kuramotoformation_20261006_1{45922,50306,50720}.txt` and
+`distanceformation_20261006_15{4341,4826,5328}.txt`; figures
+`docs/figures/kuramoto_ladder/` and `.../distance_ladder/`, built by
+`tools/plot_ladder.py --algo kuramoto|distance`.
+
+**Kuramoto** — four oscillators holding a 0.65 m ring (`KuramotoFormation`,
+`velocity_gain` is the coefficient on `(target_velocity − state.velocity)`):
+
+| k·τ | ripple | τ measured | period | median tilt | clipped | median design gap |
+|---|---|---|---|---|---|---|
+| 0.39 | 0.77 cm | 0.25 s | — | 1.0° | 0% | 14 cm |
+| 0.81 | 17.90 cm | 0.27 s | 1.22 s | 26.4° | 4% | 28 cm |
+| 1.20 | 21.13 cm | 0.28 s | 1.16 s | 29.3° | 80% | 66 cm |
+
+**Distance formation** — six agents holding an octahedron by distances alone
+(`DistanceFormation`, `accel = kp·force − kv·velocity`, so `gain_kv` is k):
+
+| k·τ | ripple | τ measured | period | median tilt | clipped | edge error (settled) |
+|---|---|---|---|---|---|---|
+| 0.39 | 0.91 cm | 0.26 s | — | 0.8° | 0% | 0.0060 m |
+| 0.81 | 22.85 cm | 0.28 s | 1.28 s | 29.0° | 10% | 0.1068 m |
+| 1.20 | 22.69 cm | 0.26 s | 1.11 s | 33.7° | 90% | 0.0999 m |
+
+- **The prediction held on both.** Quiet at 0.39, ringing hard at 0.81, the
+  measured loop delay 0.25–0.28 s against the 0.28 s nominal, and the period
+  1.11–1.28 s against 4τ ≈ 1.1 s. Five laws from five papers now behave the same
+  way, and two of them were not used to build the rule.
+- **Kuramoto's own metric reports none of it.** The order parameter R — the
+  quantity a Kuramoto paper plots, 1.0 meaning perfect phase lock — reads
+  **1.0000 / 0.9909 / 0.9962** across a ladder that takes the aircraft from 0.8
+  to 21 cm of oscillation, 29° of bank, and 80% of its commanded acceleration
+  clipped. Every rung is within 1% of its own simulation. Phase synchronisation
+  survives completely intact while the flight does not.
+- **Distance formation is the counter-example that sharpens the point.** Its
+  edge-length error does report the failure: 0.006 m at k·τ 0.39 against
+  0.107 m at 0.81, which is **27× its own simulation** at that rung. Same
+  threshold, same mechanism, same aircraft — but one paper's headline metric is
+  blind to it and the other's is not. The difference is that R is invariant to
+  the radial motion the delay produces, while an edge length is not.
+
+Together with 16b this is the project's central secondary finding, and it is
+sharper than the primary one: **which of these laws' headline metrics can see a
+sim-to-hardware gap is a property of the metric, not of the hardware.**
+
+### 16f. The breathing that never ran
+
+The three distance-formation configs ask for a 20 s, ±21.4% size cycle after a
+15 s delay. In the air it was not visible, and the records explain why:
+
+- `reference_valid` is **0 on every row of all three records**. The manager
+  publishes `/distance_formation/reference` on each control tick and
+  `tools/metrics_recorder.py` subscribes to it (line ~1473); it never arrived.
+  The recorder's guard then NaNs `edge_rms`, `edge_max`, `d_min`, `V_pot`,
+  `K_kin`, `W_lyap`, `shape_err`, `cx` and `cy` for the whole flight — by
+  design, so a run is never scored against a shape the controller was not
+  flying.
+- Independently, the geometry. The octahedron's mean pair distance should swing
+  about **22 cm** at 0.05 Hz. Measured, by FFT over the post-delay window:
+  **0.01, 0.51 and 0.82 cm**. Fifty to two thousand times short. The cycle was
+  never commanded; this is not a tracking failure.
+
+One cause fits both: **the node that flew was the installed copy, and the
+install space was out of step with `src/`.** Breathing and the reference topic
+landed together in commit `bf915de` (22 Sep), and earlier in the same session a
+`colcon build` had failed and the configs were hand-copied into the install
+share instead. Either the installed `distance_formation.py` predates `bf915de`
+or the installed config lacked the breathing block; the recorder read the `src`
+config either way, which is why the record *header* shows breathing parameters
+that the controller never used.
+
+Recovery: the positions are logged, and the shape the controller actually held
+was the static one, so `ladder_common.recompute_distance_edges()` rebuilds the
+edge error from positions and `plot_ladder.py` runs the simulation reference
+with breathing disabled. The k·τ ladder in 16e is therefore intact. **The
+breathing experiment itself has not been run** and must be reflown after a clean
+`rm -rf build/drone_testbed install/drone_testbed && colcon build`.
+
+The wider lesson, and it should be in the report's limitations: *the record's
+header is written by the recorder from `src`, and is not evidence about what the
+flight controller was running.* Verify the install space, not the config file.
+
+### 16g. Where the threshold sits now
+
+All 25 real-drone flight-rungs in the corpus, ordered by k·τ:
+
+| k·τ | rung | algorithm | oscillation | clipped |
+|---|---|---|---|---|
+| 0.28–0.67 | r1, c1, h04, q04, s3, r2, s2, c2 | all five | 0.5–1.9 cm | 0% |
+| **0.81** | **h08, q08** | **distance, kuramoto** | **17.9–22.9 cm** | 4–10% |
+| 0.84 | r3 | trochoidal | 5.8–6.1 cm | 0% |
+| 1.01–3.92 | c3, r4, h12, q12, r5, r6, r10, r14 | all five | 14.6–23.3 cm | 79–95% |
+
+The onset band **narrows from 0.67–1.01 to 0.67–0.81**: c2 at 0.67 is the
+highest quiet rung (1.9 cm) and the two 6 Oct k08 rungs at 0.81 are the lowest
+loud ones. `BAND` in `tools/plot_key.py` was updated accordingly on 6 Oct and
+`key/1_threshold.png` redrawn. r3 at 0.84 (5.8 cm) is intermediate and sits just
+above the new band, which is consistent with a transition rather than a step.
+
+Two exceptions to state plainly rather than hide:
+
+- **s1 (flocking, k·τ 1.32) shows only 2.9 cm** of ripple despite 83% clipping.
+  Flocking's oscillation lives in the lattice rather than in a single drone's
+  path, so the per-drone band-passed radius is the wrong instrument for it. This
+  was already noted on the 16 Sep ladder and is not new.
+- **Every rung is a single flight.** The ladder is steep enough that session
+  scatter cannot plausibly produce a 20× step between 0.67 and 0.81, but there
+  are still no error bars anywhere in this corpus.
+
+### 16h. Figures, records and how to reproduce
+
+```
+python3 tools/plot_ladder.py --algo kuramoto        # docs/figures/kuramoto_ladder/
+python3 tools/plot_ladder.py --algo distance        # docs/figures/distance_ladder/ (fig 7 = the breathing)
+python3 tools/plot_noise_ladder_algos.py --algo flocking
+python3 tools/plot_noise_ladder_algos.py --algo coverage
+python3 tools/plot_fleet_size.py                    # docs/figures/fleet_size/
+python3 tools/plot_key.py                           # docs/figures/key/1_threshold.png
+python3 tools/make_figure_index.py --embed          # docs/figures/index.html (+ standalone)
+```
+
+`docs/figures/index.html` is the browsable set — 55 figures, one tab per sweep,
+captions written as prose about what each figure means. `index_standalone.html`
+is the same page with the images inlined, for sending to someone.
+
+The flight records live in `logs/hw/` and are **not in git** (`.gitignore`
+excludes `logs/`). 66 records on this machine.
+
+### 16i. What is measured and what is inferred
+
+Measured: every number in the tables above, the loop delay τ from
+cross-correlating the replayed command against the achieved acceleration, the
+oscillation period from a Welch peak in the 0.6–1.5 Hz band, and the placement
+offsets from each record's own header.
+
+Inferred: that the 0.81 rungs *bracket* the onset — no rung was flown between
+0.67 and 0.81; that the install space is the cause of 16f — consistent with both
+symptoms and with a known failed build, but not yet confirmed by a `diff` on the
+lab machine; that the simulated agents' motion in 16d travels through the
+consensus coupling — it is the only available route, but it has not been
+isolated by, say, cutting an edge.
+
+### 16j. What is still missing
+
+1. **Repeats.** Not one cell in this corpus has an error bar. Three flights of
+   the same config in one session would fix the weakest sentence in every
+   section above.
+2. **The breathing experiment**, after a clean rebuild (16f).
+3. **A rung between k·τ 0.67 and 0.81** would turn a bracket into a number.
+4. **Kuramoto and distance formation under sensor noise** — the `_k04_n10`
+   configs exist and were never flown, so the 16b metric-blindness result rests
+   on two algorithms rather than four.
+5. **`velocity_window`**, the one physical-layer lever that has never been
+   swept. It sets the ×11 amplification in 16a's mechanism directly.

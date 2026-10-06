@@ -64,8 +64,12 @@ RAMP = {
     'coverage': ['#8fc0ee', '#4a90d9', '#1b4f8f'],
     # greens, light to dark
     'flocking': ['#8fd3b6', '#2aa877', '#0f5c42'],
+    # magentas, light to dark
+    'kuramoto': ['#ea8bb8', '#c21d6e', '#73053c'],
+    # olives, light to dark
+    'distance': ['#c9bb6e', '#6b5d0f', '#3b3305'],
 }
-MARKERS = ['o', 's', '^', 'D']
+MARKERS = ['o', 's', '^', 'D', 'v']
 
 RC = {
     'font.size': 9, 'axes.titlesize': 10, 'axes.titleweight': 'bold',
@@ -248,14 +252,35 @@ def setpoint(t, P, j, Uc, t0, t1):
 def own_velocity_gain(algo_name, params, P, sl):
     """k, the coefficient on a drone's OWN velocity in its commanded accel.
 
-    coverage:  kd
-    flocking:  c2_gamma + c2_alpha * sum_j bump_ij, so it depends on how many
-               neighbours are in range -- measured over the window, per drone.
+    coverage:           kd
+    kuramoto:           velocity_gain
+    distance formation: gain_kv  (the anchor carries gain_kv + anchor_gain_kd)
+    flocking:           c2_gamma + c2_alpha * sum_j bump_ij, so it depends on
+                        how many neighbours are in range -- measured over the
+                        window, per drone.
+
+    All four laws have the same shape: commanded accel = (something about where
+    the fleet should be) - k * (this drone's own velocity). k is the coefficient
+    on that last term and nothing else; a gain on a NEIGHBOUR's velocity or on a
+    velocity DIFFERENCE does not enter, because the delay only destabilises the
+    loop a drone closes on itself.
     """
     n = P.shape[1]
-    if algo_name.lower() == 'coverage':
+    name = algo_name.lower()
+    if name == 'coverage':
         k = float(params.get('gain_kd', 1.2))
         return [k] * n
+    if name == 'kuramotoformation':
+        # accel = ... + velocity_gain * (target_velocity - state.velocity)
+        return [float(params.get('velocity_gain', 2.0))] * n
+    if name == 'distanceformation':
+        # accel = kp * force - kv * state.velocity. The anchor can add damping
+        # on top (anchor_gain_kd), which would put it on a higher rung; it is 0
+        # in every config flown, so this asserts rather than guesses.
+        if float(params.get('anchor_gain_kd', 0.0)) != 0.0:
+            raise ValueError('anchor_gain_kd != 0: k is no longer uniform, '
+                             'split the anchor out before reading k*tau')
+        return [float(params.get('gain_kv', 1.0))] * n
     from drone_testbed.algorithms.flocking import _sigma_norm, _bump
     eps = float(params.get('epsilon', 0.1))
     h = float(params.get('bump_h', 0.2))
@@ -301,10 +326,20 @@ def tilt(acc):
 
 # ---- the matching simulation ----------------------------------------------
 
-def sim_of(cfgname, duration):
-    """Same config, no physical layer: the gap-B reference (PROJECT_AIM 6a)."""
+def sim_of(cfgname, duration, override=None):
+    """Same config, no physical layer: the gap-B reference (PROJECT_AIM 6a).
+
+    `override` patches the algorithm params before the run. It exists for one
+    case: the distance-formation records were flown by a node whose installed
+    copy predated the breathing code, so the hardware ran the STATIC shape. A
+    sim that breathes is not the reference those flights were commanded
+    against, and scoring them against it would charge the aircraft for a
+    defect in the install space. See docs/figures/distance_ladder.
+    """
     import sim_baseline as S
     cfg = yaml.safe_load(open(os.path.join(CFG, cfgname)))
+    if override:
+        cfg.setdefault('algorithm', {}).setdefault('params', {}).update(override)
     metrics, ts, data, pos_hist, rate = S.run(cfg, duration)
     return dict(cfg=cfg, cols=metrics.all_columns(), t=ts, D=data,
                 P=np.array(pos_hist), ids=[d['id'] for d in cfg['drones']])
@@ -328,6 +363,57 @@ def recompute_coverage_H(rec, P, t_start):
         cells = cm._cells(P[k], t[k] - t_start)
         H[k] = sum(c[1] for c in cells if c is not None)
     return H
+
+
+def recompute_distance_edges(rec, P, scale=1.0):
+    """Edge-length error of a distance formation, computed from positions.
+
+    The recorder NaNs every distance-formation metric when the controller's
+    breathing reference does not arrive -- deliberately, so a run is never
+    scored against a shape the controller was not flying. The 6 Oct records hit
+    that guard, but the positions are logged and the shape the controller
+    actually held was the static one, so the error is recoverable here.
+
+    Returns (edge_rms, d_min, shape_err), each a series over the record.
+    """
+    from drone_testbed.algorithms.distance_formation import formation_spec
+    targets, edges, dist = formation_spec(rec['params'], rec['ids'])
+    centre = np.asarray(rec['params'].get('formation_center', [0.0, 0.0]), float)
+    targets = centre + scale * (np.asarray(targets, float) - centre)
+    dist = np.asarray(dist, float) * scale
+    n = len(P)
+    e_rms = np.empty(n)
+    d_min = np.empty(n)
+    shape = np.empty(n)
+    pairs = [(a, b) for a in range(P.shape[1]) for b in range(a + 1, P.shape[1])]
+    for k in range(n):
+        L = np.array([np.linalg.norm(P[k, a] - P[k, b]) for a, b in edges])
+        e_rms[k] = float(np.sqrt(np.mean((L - dist) ** 2)))
+        d_min[k] = min(np.linalg.norm(P[k, a] - P[k, b]) for a, b in pairs)
+        A = P[k] - P[k].mean(0)
+        B = targets - targets.mean(0)
+        best = np.inf
+        for mirror in (1.0, -1.0):
+            Bm = B * np.array([1.0, mirror])
+            U, _, Vt = np.linalg.svd(Bm.T @ A)
+            R = U @ np.diag([1.0, np.sign(np.linalg.det(U @ Vt))]) @ Vt
+            best = min(best, float(np.sqrt(((Bm @ R - A) ** 2).sum(1).mean())))
+        shape[k] = best
+    return e_rms, d_min, shape
+
+
+def breathing_reference(rec, t):
+    """The scale the breathing profile WOULD command, on the record's clock.
+
+    Used to show what the hardware did not do. The controller's own clock only
+    advances on ticks where every drone has reported, so this is an upper bound
+    on the commanded swing, not a claim about phase.
+    """
+    from drone_testbed.algorithms.distance_formation import BreathingProfile
+    prof = BreathingProfile(rec['params'])
+    if not prof.enabled:
+        return None
+    return np.array([prof.scale(float(x)) for x in t])
 
 
 def col(rec_or_sim, name):

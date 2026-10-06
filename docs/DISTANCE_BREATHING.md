@@ -16,7 +16,7 @@ headless baseline, visual simulation and hybrid launch.
 | `breathing_start_delay` | 15.0 s | Hold nominal size before starting the wave. This is measured from controller activation, after the launch's takeoff hold. |
 | `breathing_ramp_duration` | 5.0 s | Smoothly introduce the wave's amplitude; must be positive. Keep fixed across comparisons. |
 | `side_length` | 0.7 m | Nominal hexagon size. Keep fixed: it changes both the motion envelope and force demand. |
-| `max_accel` | 0.5 m/s² per axis | Acceleration limit. Keep fixed to compare controllers under the same constraint. |
+| `max_accel` | **3.5 m/s² per axis** | Acceleration limit. Keep fixed to compare controllers under the same constraint. **Raised from 0.5 on 2026-10-06:** at 0.5 the 20 s / ±21.4% schedule clips 49.5% of ticks (peak demand 1.40 m/s²), which is the amplitude rather than the period — measured in simulation at 30 s/±10% 12.6%, 20 s/±21.4% 49.5%, 20 s/±10% 7.8%, 30 s/±21.4% 38.9%. At 3.5 nothing clips. Breathing data recorded before 6 Oct is not comparable with data recorded after. |
 
 Change one variable per comparison. Keep topology, anchor, initial placement,
 control rate, estimation settings and altitude settings fixed. Save a separate

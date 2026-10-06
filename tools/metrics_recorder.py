@@ -149,8 +149,8 @@ class MetricSet:
         return (self.columns() + [f'z_{i}' for i in self.ids]
                 + [f'tilt_{i}' for i in self.ids])
 
-    def full_row(self, t, pos, vel, z=None, tilt=None):
-        r = self.row(t, pos, vel)
+    def full_row(self, t, pos, vel, z=None, tilt=None, **kw):
+        r = self.row(t, pos, vel, **kw)
         if r is None:
             return None
         n = len(self.ids)

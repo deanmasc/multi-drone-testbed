@@ -1,30 +1,35 @@
 #!/usr/bin/env python3
-"""Fleet size against measurement noise: one real drone vs two (23 + 30 Sep 2026).
+"""Fleet size against measurement noise: one real drone vs two (23 Sep + 6 Oct 2026).
 
 A 2x2. Trochoidal consensus at beta = 2 (k*tau 0.56), 0 and 10 mm of injected
 VICON noise per axis, flown once with drone1 real and once with drone1 AND
-drone4 real. The question is whether the gap to simulation widens when more of
-the fleet is a real aircraft, at the same noise level.
+drone4 real. Identical alpha/beta/kappa/theta, max_accel 3.5 and
+velocity_window 10 in all four records, so the only thing that moves across a
+row is how much of the fleet is a physical aircraft. The question is whether
+the gap to simulation widens when more of it is.
 
     python3 tools/plot_fleet_size.py
 
-READ THIS BEFORE QUOTING THE NUMBERS. Two things confound the comparison and
-neither can be fixed in analysis:
+READ THIS BEFORE QUOTING THE NUMBERS.
 
-  1 NOT QUITE THE SAME PATTERN. On 23 Sep the real drone1 sat on drone4's floor
-    mark, 41 cm from its own; on 30 Sep drone1 was there again and drone4 took
-    the vacant mark, so the pair was exchanged. Each start produces its own
-    trochoid. Deviation is measured against a noiseless replay seeded from each
-    run's OWN engage positions, so it is always "how far from where the law
-    wanted it" -- and measured, the four designed patterns turn out close:
-    radius 24 / 21 / 20 / 20 cm and design speed 0.025 / 0.023 / 0.021 /
-    0.021 m/s, a spread of about 15%. Small enough that the x1.7-x2.3 effects
-    below are not explained by it, large enough to report. Both panels are on
-    the right of 3_caveats.png.
+  1 PLACEMENT. The two-real cells were REFLOWN on 6 Oct with the marks checked
+    before engage: drone1 landed 0.6 and 2.1 cm from its own mark, drone4 9.8
+    and 11.0 cm from its. The 23 Sep one-real cells still carry the old fault
+    -- drone1 on drone4's mark, 41 cm out -- so the two rows do not start from
+    the same pattern. Deviation is measured against a noiseless replay seeded
+    from each run's OWN engage positions, so every cell is scored as "how far
+    from where the law wanted IT"; the designed patterns themselves are
+    compared on the right of 3_caveats.png.
 
-  2 ONE FLIGHT PER CELL, and the two fleet sizes are a week apart.
+  2 THE TWO-REAL FLIGHTS ARE VERTICALLY SEPARATED. drone1 held 1.41-1.47 m and
+    drone4 0.75 m. Without that split the pair closes to 6-16 cm horizontally
+    and they hit each other. It is a real difference between the rows, not a
+    nuisance: the two-drone cell has a drone flying in another's downwash
+    column some of the time.
 
-  3 THE RECORDED x,y IS THE NOISY READING (metrics_recorder takes it from
+  3 ONE FLIGHT PER CELL, and the two fleet sizes are two weeks apart.
+
+  4 THE RECORDED x,y IS THE NOISY READING (metrics_recorder takes it from
     /state). Every position-derived bar therefore carries a sensor-only null:
     that cell's own 0 mm trajectory re-measured through 10 mm of noise. Tilt
     comes from /poses and is clean.
@@ -57,10 +62,11 @@ LOGS = os.path.join(ROOT, 'logs', 'hw')
 
 DT = 0.1
 WIN_SKIP = 2.0
-# Set by the 30 Sep flights: the 0 mm one was stopped early when a drone
-# misbehaved and the 10 mm one ran the battery flat at ~110 s. Both fleet
-# sizes are cut to the same 93 s so the distributions cover the same ground.
-WIN = 93.0
+# Set by the 6 Oct 10 mm flight, which ran its battery flat: drone1 is upside
+# down on the floor (tilt 171 deg, z 0.006 m) from t = 145 s. Everything is cut
+# to the same 125 s from engage + 2 s so the four distributions cover the same
+# ground; the shortest record still has 127 s of clean flight after engage.
+WIN = 125.0
 SHAKE = (0.6, 1.5)
 
 # (fleet label, noise mm, record, config, which agents were real)
@@ -69,9 +75,11 @@ RUNS = [
      'testbed_fig4_r2_n0.yaml'),
     ('1 real', '10', 'trochoidalconsensus_20260923_155129.txt',
      'testbed_fig4_r2_n10.yaml'),
-    ('2 real', '0',  'trochoidalconsensus_20260930_151018.txt',
+    # Reflown 6 Oct with the marks verified; the 30 Sep pair they replace was
+    # flown with drone1 and drone4 on each other's marks and is superseded.
+    ('2 real', '0',  'trochoidalconsensus_20261006_142312.txt',
      'testbed_fig4_r2_n0.yaml'),
-    ('2 real', '10', 'trochoidalconsensus_20260930_160005.txt',
+    ('2 real', '10', 'trochoidalconsensus_20261006_144420.txt',
      'testbed_fig4_r2_n10.yaml'),
 ]
 
@@ -300,7 +308,7 @@ def fig_deviation(runs, out):
                  x=0.008, y=0.985, va='top', ha='left', fontsize=12,
                  fontweight='bold', color=INK)
     fig.text(0.008, 0.925,
-             'Trochoidal consensus, beta = 2, 93 s window, one flight per cell. '
+             f'Trochoidal consensus, beta = 2, {WIN:.0f} s window, one flight per cell. '
              'Black tick is the sensor-only null.',
              va='top', ha='left', fontsize=9, color=MUTED)
     fig.tight_layout()
