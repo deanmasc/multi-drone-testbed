@@ -67,6 +67,7 @@ class MetricsTests(unittest.TestCase):
         self.assertIn('not observed', '\n'.join(self.m.summarise(t, data, [])))
 
     def test_other_algorithms_keep_existing_metrics(self):
+        self.assertIsInstance(module.make_metrics('KuramotoPhaseDelay', ['a', 'b'], {}), module.KuramotoMetrics)
         self.assertIsInstance(module.make_metrics('Flocking', ['a', 'b'], {}), module.FlockingMetrics)
         self.assertIsInstance(module.make_metrics('TrochoidalConsensus', ['a', 'b'], {}), module.TrochoidalMetrics)
 

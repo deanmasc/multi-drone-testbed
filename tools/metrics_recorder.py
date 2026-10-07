@@ -1397,7 +1397,7 @@ class GenericMetrics(MetricSet):
 
 def make_metrics(algo_name, ids, params):
     key = algo_name.lower()
-    if key == 'kuramotoformation':
+    if key in ('kuramotoformation', 'kuramotophasedelay'):
         return KuramotoMetrics(ids, params)
     if key == 'flocking':
         return FlockingMetrics(ids, params)

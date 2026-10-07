@@ -56,14 +56,15 @@ class KuramotoAgent:
     def reset(self):
         self.phase = self.initial_phase % (2 * math.pi)
 
-    def step(self, state, neighbor_states, neighbor_phases, dt):
+    def step(self, state, neighbor_states, neighbor_phases, dt, *, coupling_phases=None):
         if not math.isfinite(dt) or dt <= 0:
             raise ValueError('dt must be positive and finite')
         own_offset = self.phase_offsets[self.drone_id]
+        coupling_phases = neighbor_phases if coupling_phases is None else coupling_phases
         phase_rate = self.omega + self.phase_gain * sum(
-            self.weights[d] * math.sin((neighbor_phases[d] - self.phase_offsets[d])
+            self.weights[d] * math.sin((coupling_phases[d] - self.phase_offsets[d])
                      - (self.phase - own_offset))
-            for d in self.neighbors if d in neighbor_phases)
+            for d in self.neighbors if d in coupling_phases)
         # Check the physical orbital angle on every step. A lagging drone slows
         # its oscillator, feeding the motion error back into neighbor coupling.
         # Near the center the angle is undefined; smoothly suppress this check.
