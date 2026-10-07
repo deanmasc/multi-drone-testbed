@@ -40,7 +40,19 @@ class KuramotoAgent:
         for key, default in [('radius', .65), ('omega', .35),
                              ('phase_gain', .25), ('tracking_phase_gain', .4), ('position_gain', 1.),
                              ('formation_gain', .8), ('velocity_gain', 2.), ('max_accel', .5)]:
-            value = float(params.get(key, default))
+            raw = params.get(key, default)
+            # `omega` may be a per-agent mapping, so a run can have NON-IDENTICAL
+            # natural frequencies. Schmidt et al., Automatica 48 (2012) 3008,
+            # eq. (10): with identical frequencies and no delay every oscillator
+            # sees the same phase bias, so nothing can desynchronise and the
+            # delay only shifts the agreement frequency via the self-consistency
+            # condition eq. (9). The spread omega_max - omega_min is what enters
+            # their bound, so it has to be settable to test anything.
+            if key == 'omega' and isinstance(raw, dict):
+                if drone_id not in raw:
+                    raise ValueError(f'omega mapping is missing {drone_id}')
+                raw = raw[drone_id]
+            value = float(raw)
             if not math.isfinite(value):
                 raise ValueError(f'{key} must be finite')
             setattr(self, key, value)
