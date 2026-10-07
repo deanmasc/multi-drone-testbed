@@ -112,6 +112,53 @@ RAMP5 = ['#a3c9e6', '#7ca3c4', '#577fa3', '#335c82', '#0d3b63']
 # 0 mm control ran 180 s (it was flown before the 180 s duration was shown to
 # be unnecessary), so the control is truncated to the same window as the rest.
 SPEC = {
+    # --- 7 Oct ladders -----------------------------------------------------
+    # Both sit at k*tau 0.39, well below the 0.67-0.81 oscillation threshold,
+    # so the noise is the only thing acting. Each rung differs from its control
+    # in mocap_noise and nothing else -- verified by diffing the parsed params,
+    # not by reading the files. Distance formation uses the STATIC hybrid
+    # config, not the breathing one: breathing would be a second variable, and
+    # the 6 Oct k04 flights were static anyway (the install space predated the
+    # breathing code, PROJECT_AIM 16f).
+    'kuramoto': dict(
+        title='kuramoto',
+        win=130.0,
+        ramp=RAMP4,
+        pattern='kuramoto ring',
+        runs=[('0', 'REPLACE_kuramoto_n0.txt', 'testbed_kuramoto_k04.yaml'),
+              ('2', 'REPLACE_kuramoto_n2.txt', 'testbed_kuramoto_k04_n2.yaml'),
+              ('5', 'REPLACE_kuramoto_n5.txt', 'testbed_kuramoto_k04_n5.yaml'),
+              ('10', 'REPLACE_kuramoto_n10.txt', 'testbed_kuramoto_k04_n10.yaml')],
+        # The four properties the law actually promises: phase lock, the ring
+        # radius, even angular spacing, and no collisions. order_R and d_min
+        # are "higher is better"; the other two are errors.
+        native=[('order_R', 1, '', 'Order parameter R (phase lock)', '{:.4f}', False, ''),
+                ('radius_rms', 100, 'cm', 'Radial error (on the ring)', '{:.1f}', True, ''),
+                ('angular_spacing_rms', 1, 'rad', 'Angular spacing error', '{:.3f}', True, ''),
+                ('d_min', 100, 'cm', 'Smallest pair gap (safety)', '{:.0f}', False, '')],
+        gain='velocity_gain',
+        note='four agents on a 0.65 m ring, omega 0.35 rad/s',
+    ),
+    'distance': dict(
+        title='distance formation',
+        win=130.0,
+        ramp=RAMP4,
+        pattern='octahedron',
+        runs=[('0', 'REPLACE_distance_n0.txt', 'testbed_hexagon_hybrid_k04.yaml'),
+              ('2', 'REPLACE_distance_n2.txt', 'testbed_hexagon_hybrid_k04_n2.yaml'),
+              ('5', 'REPLACE_distance_n5.txt', 'testbed_hexagon_hybrid_k04_n5.yaml'),
+              ('10', 'REPLACE_distance_n10.txt', 'testbed_hexagon_hybrid_k04_n10.yaml')],
+        # edge_rms is the promise -- the shape is defined by distances alone.
+        # W_lyap is the convergence certificate the proof uses. Both are logged
+        # natively here because the static config leaves breathing disabled, so
+        # the recorder's reference guard never fires.
+        native=[('edge_rms', 100, 'cm', 'Edge-length error (the promise)', '{:.2f}', True, ''),
+                ('shape_err', 100, 'cm', 'Shape error after rigid fit', '{:.2f}', True, ''),
+                ('W_lyap', 1, '', 'Lyapunov function W', '{:.4f}', True, ''),
+                ('d_min', 100, 'cm', 'Smallest pair gap (safety)', '{:.0f}', False, '')],
+        gain='gain_kv',
+        note='six agents, octahedron, 0.7 m sides, drone1 anchored',
+    ),
     'flocking': dict(
         title='flocking',
         win=124.0,
@@ -627,8 +674,14 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--algo', choices=sorted(SPEC), default='flocking')
     ap.add_argument('--out', default=None)
+    ap.add_argument('--runs', help='override the records: "0=rec.txt,2=rec.txt,..." '
+                                   '-- configs are taken from the spec')
     a = ap.parse_args()
     spec = SPEC[a.algo]
+    if a.runs:
+        by_label = {lab: cfg for lab, _, cfg in spec['runs']}
+        spec = dict(spec, runs=[(lab, rec, by_label[lab]) for lab, rec in
+                                (c.split('=', 1) for c in a.runs.split(','))])
     out = a.out or os.path.join(ROOT, 'docs', 'figures', f'noise_ladder_{a.algo}')
     os.makedirs(out, exist_ok=True)
 
