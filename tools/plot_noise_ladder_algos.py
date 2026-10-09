@@ -166,7 +166,7 @@ SPEC = {
         win=124.0,
         ramp=RAMP4,
         pattern='flocking lattice',
-        runs=[('0', 'flocking_20260929_143348.txt', 'testbed_flocking_hybrid_s2_n0.yaml'),
+        runs=[('0', 'flocking_20261007_161108.txt', 'testbed_flocking_hybrid_s2_n0.yaml'),
               ('2', 'flocking_20260929_144718.txt', 'testbed_flocking_hybrid_s2_n2.yaml'),
               ('5', 'flocking_20260929_145234.txt', 'testbed_flocking_hybrid_s2_n5.yaml'),
               ('10', 'flocking_20260929_150050.txt', 'testbed_flocking_hybrid_s2_n10.yaml')],
@@ -192,7 +192,7 @@ SPEC = {
         ramp=RAMP5,
         pattern='coverage configuration',
         runs=[('0', 'coverage_20260929_151743.txt', 'testbed_coverage_c2_n0.yaml'),
-              ('2', 'coverage_20260929_152418.txt', 'testbed_coverage_c2_n2.yaml'),
+              ('2', 'coverage_20261007_160703.txt', 'testbed_coverage_c2_n2.yaml'),
               ('5', 'coverage_20260929_152810.txt', 'testbed_coverage_c2_n5.yaml'),
               ('10', 'coverage_20260929_153141.txt', 'testbed_coverage_c2_n10.yaml'),
               ('20', 'coverage_20260929_153520.txt', 'testbed_coverage_c2_n20.yaml')],
@@ -511,6 +511,7 @@ def fig_deviation(spec, runs, out):
         ax.annotate(f"{r['dev_med'] * 100:.1f}", (X[r['label']], r['dev_med'] * 100),
                     textcoords='offset points', xytext=(13, -3), fontsize=8.5,
                     color=INK, ha='left')
+
     _noise_axis(ax)
     ax.set_xlabel("noise added to drone1's VICON position")
     ax.set_ylabel('distance from the designed position (cm)')
@@ -744,6 +745,8 @@ def main():
     X.update({k: n for n, k in enumerate(RUNGS)})
 
     add_nulls(runs)
+
+
     table(spec, runs)
     fig_deviation(spec, runs, out)
     fig_paths(spec, runs, out)

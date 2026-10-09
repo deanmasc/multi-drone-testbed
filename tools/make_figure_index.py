@@ -135,15 +135,18 @@ CAPTIONS = {
         'The deviation panel is inflated by under 1% and the tilt panel comes '
         'from /poses, so the headline of this ladder is unaffected. The two '
         'later ladders carry the null explicitly.'),
-    # --- measurement noise on the other two algorithms (29 Sep) -------------
+    # --- measurement noise on the other two algorithms (29 Sep; the
+#     coverage 2 mm and flocking 0 mm rungs reflown 7 Oct) --------------
     'noise_ladder_flocking/1_deviation.png': (
-        'Sensor noise, flocking: distance from the designed position',
-        'drone1 against where the noiseless simulation of the same config put '
-        'it, over a 124 s window. RMS deviation 5.5 / 4.8 / 9.1 / 11.1 cm. The '
-        '0 and 2 mm rungs are indistinguishable — 2 mm of noise is below what '
-        'a single flight can resolve here — but 5 and 10 mm are clearly '
-        'separated from the control. The window stops at 138 s to exclude a '
-        '0.9 s tracking loss in the 2 mm record at t = 144 s.'),
+        'Flocking: deviation against the noise level',
+        'Four rungs over a common 124 s window: 5.2 / 4.8 / 9.1 / 11.1 cm '
+        'RMS. The 0 mm control is the 7 Oct reflight, which supersedes the '
+        '29 Sep flight — and reproduced it almost exactly, 5.2 against 5.5 cm '
+        'RMS with an identical 5.1 cm median. So the control reading ABOVE '
+        'its own 2 mm rung is not a bad run; it is real. Flocking\'s low '
+        'rungs are simply within scatter of each other, which is consistent '
+        'with its deviation being only x1.95 above its sensor-only null even '
+        'at 10 mm.'),
     'noise_ladder_flocking/2_paths.png': (
         'Sensor noise, flocking: the flown path against the designed one',
         'The gamma term walks the flock around a 0.6 m circle, so the designed '
@@ -160,12 +163,15 @@ CAPTIONS = {
         'already multiplied the position noise by 11 — at 10 mm that alone is '
         '0.11 m/s, more than the whole rise. It is an artefact, greyed here.'),
     'noise_ladder_coverage/1_deviation.png': (
-        'Sensor noise, coverage: distance from the designed position',
-        'Five rungs over a 112 s window. RMS deviation 3.6 / 10.3 / 8.2 / 10.5 '
-        '/ 18.3 cm. The control is flat and low for the whole flight; 20 mm is '
-        'never quiet. With one flight per rung the 2-10 mm ordering is inside '
-        'the run-to-run spread, but the control and the 20 mm rung are not '
-        'close to each other.'),
+        'Coverage: deviation against the noise level',
+        'Five rungs over a common 112 s window, gains identical throughout: '
+        '3.6 / 7.9 / 8.2 / 10.5 / 18.3 cm RMS, monotone. The 2 mm rung is the '
+        '7 Oct reflight, which supersedes the 29 Sep flight that read 10.3 cm '
+        'and sat above the 5 mm rung. Worth knowing when reading the middle: '
+        'the two 2 mm flights span 2.4 cm, which is wider than the 0.3 cm gap '
+        'between this rung and the next, so 2 and 5 mm are not separated by '
+        'this data. The ends are — 20 mm is x5.1 the control and x4.0 its own '
+        'sensor-only null. See the Repeatability tab.'),
     'noise_ladder_coverage/2_paths.png': (
         'Sensor noise, coverage: the flown path against the designed one',
         'drone1 chasing the orbiting hotspot. The 0 mm trace sits on the grey '

@@ -2022,13 +2022,16 @@ fifth rung because coverage is the quiet algorithm). One real drone, drone1.
 Figures `docs/figures/noise_ladder_flocking/` and `.../noise_ladder_coverage/`,
 built by `tools/plot_noise_ladder_algos.py --algo flocking|coverage`.
 
-**Coverage.** Deviation from the designed configuration, RMS: 3.6 / 10.3 / 8.2 /
+**Coverage.** Deviation from the designed configuration, RMS: 3.6 / 7.9 / 8.2 /
 10.5 / **18.3** cm against a sensor-only null of 3.6 / 3.6 / 3.7 / 3.9 / 4.6 cm.
+*(The 2 mm rung is the 7 Oct reflight, substituted for the 29 Sep flight that
+read 10.3 cm — see 16k. With it the ladder is monotone.)*
 Oscillation 0.59 → 4.87 cm against a null of 0.59 → 1.29 cm, so ×3.8 above what
 the injection alone explains. Median tilt 3.4 → 6.7° on the clean channel. The
-ladder is not monotone in the middle — the 2 mm rung reads higher than 5 mm —
-which is what one flight per rung looks like; the ends are far enough apart
-(×5.1, ×4.0 above null) that the trend is not in doubt.
+ladder is monotone once the 2 mm rung is the reflight, but 2 and 5 mm (7.9 and
+8.2 cm) are closer together than the two 2 mm flights are to each other
+(2.4 cm), so the middle is not resolved by this data. The ends are far enough
+apart (×5.1, ×4.0 above null) that the trend is not in doubt.
 
 **And none of it appears in the algorithm's own metrics.** Mean distance to own
 Voronoi centroid, worst distance, the locational cost H, and the fraction of
@@ -2037,8 +2040,9 @@ and 8.6%** of their own means, with no trend. Since all four are computed from
 the *noisy* positions, the injection can only have biased them upward, so their
 flatness is a conservative statement.
 
-**Flocking.** Deviation 5.5 / 4.8 / 9.1 / **11.1** cm against a null of 5.5 /
-5.5 / 5.6 / 5.7 — only ×1.95 above null, so flocking's deviation reading is
+**Flocking.** Deviation 5.2 / 4.8 / 9.1 / **11.1** cm against a null of 5.2 /
+5.2 / 5.3 / 5.4 *(0 mm is the 7 Oct reflight, which reproduced the 29 Sep
+flight to 0.3 cm — the inversion against the 2 mm rung is real, not a bad run)* — only ×1.95 above null, so flocking's deviation reading is
 roughly half injection. Oscillation 0.86 → 1.24 cm against a null of 0.86 →
 1.03, i.e. ×1.20 — **for flocking the ripple column is essentially all
 artefact**, and must not be quoted as an oscillation result. Median tilt is flat
