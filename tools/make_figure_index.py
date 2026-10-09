@@ -76,6 +76,21 @@ LEVER_SECTIONS = [
                'rung at 20 mm because coverage is the quiet algorithm, flown '
                '29 Sep. Deviation, oscillation and acceleration all climb; the '
                'coverage cost and the centroid distances do not move at all.'),
+    dict(key='noise_ladder_distance', name='Sensor noise: distance form.', accent='#6b5d0f',
+         blurb='The same lever on the six-agent octahedron at k·τ = 0.39, '
+               'flown 7 Oct — 0, 2, 5 and 10 mm on drone1, static shape. The '
+               'counter-example to the other two: here the published metrics '
+               'DO report the degradation.'),
+    dict(key='noise_ladder_kuramoto', name='Sensor noise: kuramoto', accent='#c21d6e',
+         blurb='The same lever on the four-agent ring at k·τ = 0.39, flown '
+               '7 Oct. A NULL RESULT, and worth keeping: deviation does not '
+               'move at all, so noise is not universally harmful — it depends '
+               'on what the law is holding the fleet against.'),
+    dict(key='repeatability', name='Repeatability', accent='#2a6ca8',
+         blurb='The only two conditions in the corpus flown more than once, '
+               'reflown 7 Oct. Every other number in the project is a single '
+               'flight, so this is the one direct measurement of how much a '
+               'condition moves between sessions.'),
     dict(key='fleet_size', name='Fleet size', accent='#c2571a',
          blurb='One real drone against two, at 0 and 10 mm of noise — the only '
                'sweep in the corpus that changes how much of the fleet is a '
@@ -296,6 +311,54 @@ CAPTIONS = {
         'β=3: the wobble comes in bursts',
         'Below the threshold the ringing decays, but it is re-excited — bursts '
         'that are not simultaneous across drones.'),
+    # --- 7 Oct noise ladders and the repeats --------------------------------
+    'repeatability/1_repeats.png': (
+        'The only two conditions flown more than once',
+        'Dean flagged both as probably faulty. Each was reflown once on 7 Oct '
+        'with the same config, marks and analysis window. Coverage 2 mm came '
+        'back at 7.9 cm against the original 10.3 — the two flights span '
+        '2.4 cm, which is wider than the gap to the 5 mm rung (8.2 cm), so '
+        'the middle of that ladder is not resolved at one flight per rung. '
+        'Flocking 0 mm came back at 5.2 cm against 5.5 — the control is '
+        'highly repeatable and still reads above its own 2 mm rung, so that '
+        'inversion is real and not a bad run. This is the only error bar '
+        'anywhere in the corpus.'),
+    'noise_ladder_distance/1_deviation.png': (
+        'Distance formation: deviation against the noise level',
+        'Six agents holding an octahedron by distances alone, drone1 real, '
+        '32 s common window (the 0 mm control was stopped at 51 s, which caps '
+        'it). Deviation 1.4 → 4.2 cm, ×3.0 from the control and ×2.12 above '
+        'its own sensor-only null. Median tilt 1.2 → 2.0° on the clean '
+        '/poses channel the injection cannot reach.'),
+    'noise_ladder_distance/3_two_benchmarks.png': (
+        'Distance formation: the case where the metrics DO report it',
+        'The counter-example that sharpens the whole metric-blindness story. '
+        'Coverage and flocking both hid a degrading flight behind flat '
+        'published metrics. Here the opposite happens: edge-length error '
+        '1.23 → 2.20 cm (54% spread), shape error 50%, and the Lyapunov '
+        'function W — the proof\'s own convergence certificate — rises ×4.3. '
+        'A distance-defined shape is a direct function of the positions the '
+        'noise perturbs, so its metric cannot be blind to it. The Voronoi '
+        'cost and the Kuramoto order parameter can.'),
+    'noise_ladder_kuramoto/1_deviation.png': (
+        'Kuramoto: a null result, and why it is worth keeping',
+        'Four agents on a 0.65 m ring, drone1 real, 73 s window. Deviation '
+        '13.4 → 13.3 cm — flat, and sitting exactly on its own sensor-only '
+        'null, so the injection explains all of it. Noise is NOT universally '
+        'harmful. The ring is held by a strong position term against a '
+        'prescribed trajectory, so radial noise averages out; trochoidal is '
+        'unanchored and coverage is a diffusion, and both move by ×5. What '
+        'the law holds the fleet against decides whether noise matters.'),
+    'noise_ladder_kuramoto/3_two_benchmarks.png': (
+        'Kuramoto: no clean channel, so read every bar against its null',
+        'The tilt and altitude panels are empty because '
+        'metrics_recorder._write_header writes metrics.columns() rather than '
+        'all_columns() for KuramotoMetrics alone, so those records carry no '
+        '/poses data at all. Every surviving column is computed from the '
+        'noisy position, which makes the null the only reference. The '
+        'algorithm\'s own metrics are flat too — but here that agrees with '
+        'the flight rather than hiding it.'),
+
     # --- distance formation (6 Oct) ----------------------------------------
     'distance_ladder/7_breathing.png': (
         'The breathing these three flights were supposed to do, and did not',
@@ -448,8 +511,21 @@ def key_cards():
          f'centroid distances, the numbers a coverage paper actually plots, '
          f'stay inside 4% of their own mean. Flocking splits the same way, and '
          f'harder: all four of its theorem metrics stay put, and the one that '
-         f'appears to move is reading its own noisy velocity estimate. Which '
-         f'metric you publish decides whether the sim-to-hardware gap exists.'),
+         f'appears to move is reading its own noisy velocity estimate.'),
+        ('noise_ladder_distance/3_two_benchmarks.png',
+         'And the case where the metrics are not blind',
+         'The same lever on distance formation, flown 7 Oct, is the '
+         'counter-example that makes the result precise. Here the flight '
+         'degrades — deviation ×3.0, and ×2.1 above its sensor-only null — '
+         'and its published metrics say so: edge-length error 1.23 → 2.20 cm, '
+         'shape error up 50%, and the Lyapunov function the convergence proof '
+         'is built on rises ×4.3. Put beside coverage and flocking, the claim '
+         'is no longer "published metrics hide hardware problems". It is '
+         'sharper: a metric can only see the gap if it is a function of the '
+         'quantity the noise perturbs. An edge length is. A Voronoi cost and '
+         'a phase order parameter are not. Kuramoto completes the set — there '
+         'the flight did not degrade at all, so its flat metrics are simply '
+         'telling the truth.'),
         ('trochoidal_ladder/8_design_vs_actual.png',
          'Trochoidal: where the ladder started',
          'The original finding, kept here for comparison: the designed pattern '

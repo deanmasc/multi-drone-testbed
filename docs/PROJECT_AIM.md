@@ -2317,3 +2317,61 @@ isolated by, say, cutting an edge.
    on two algorithms rather than four.
 5. **`velocity_window`**, the one physical-layer lever that has never been
    swept. It sets the ×11 amplification in 16a's mechanism directly.
+
+
+### 16k. 7 October: noise on the two new algorithms, and the first repeats
+
+Ten flights. Four-rung noise ladders (0/2/5/10 mm on drone1) on distance
+formation and kuramoto at k·τ 0.39 — both below the oscillation band, so the
+noise is the only thing acting — plus one reflight each of the two rungs Dean
+suspected were faulty. Configs `testbed_hexagon_hybrid_k04{,_n2,_n5,_n10}.yaml`
+and `testbed_kuramoto_k04{,_n2,_n5,_n10}.yaml`, each rung differing from its
+control in `mocap_noise` and nothing else. Figures
+`docs/figures/noise_ladder_distance/`, `.../noise_ladder_kuramoto/` and
+`.../repeatability/`.
+
+**Distance formation degrades, and its own metrics say so.** Deviation 1.4 /
+3.1 / 3.4 / 4.2 cm against nulls of 1.4 / 1.4 / 1.6 / 2.0 — ×3.0 from the
+control and ×2.1 above the null. Median tilt 1.2 → 2.0° on the clean /poses
+channel. And unlike coverage and flocking, three of its four published metrics
+track it: edge-length error 1.23 → 2.20 cm (54% of its own mean), shape error
+after a rigid fit 50%, and the Lyapunov function W — the convergence proof's
+own certificate — ×4.3. Only `d_min` is flat, at 2%.
+
+**Kuramoto does not degrade at all.** Deviation 13.4 / 12.4 / 13.0 / 13.3 cm
+against nulls of 13.4 / 13.4 / 13.4 / 13.5 — flat, and sitting *on* the null,
+so the injection accounts for all of it. Ripple is ×1.31 above null, which is
+the only thing that moves. Note also that **KuramotoMetrics records carry no
+z or tilt at all**: `metrics_recorder._write_header` writes `metrics.columns()`
+rather than `all_columns()` for that one metric set, so there is no clean
+channel in those files and the null is the only reference available.
+
+**Together these make the 16b claim precise.** It is not "published metrics
+hide hardware problems". It is: *a metric can see a disturbance only if it is a
+function of the quantity the disturbance perturbs.* An edge length is a direct
+function of the corrupted positions and cannot be blind to them; a Voronoi cost
+and a phase order parameter are not, and are. And Kuramoto shows the flight
+itself need not degrade — a law holding the fleet to a prescribed trajectory
+with strong position feedback averages radial noise out, where an unanchored
+pattern (trochoidal, ×5.7) and a diffusion (coverage, ×5.1) do not.
+
+**The first repeats in the corpus.** Coverage 2 mm, flagged because it read
+above the 5 mm rung, came back at **7.9 cm** against the original **10.3 cm**.
+With the repeat the ladder is monotone — but the two flights span 2.4 cm,
+which is *wider* than the 0.3 cm gap between the repeat and the 5 mm rung, so
+the honest conclusion is that the middle of that ladder is not resolved at one
+flight per rung. Flocking 0 mm, flagged because the control read above its own
+2 mm rung, came back at **5.2 cm** against **5.5 cm**. The control is highly
+repeatable and still sits above the 2 mm rung, so **that inversion is real and
+the original was not a bad run** — flocking's low rungs are simply within
+scatter of each other, consistent with its deviation being only ×1.95 above
+null even at 10 mm. These two pairs are the only direct measurement of
+session-to-session spread anywhere in the project.
+
+*Not flown:* the natural-frequency-spread ladder
+(`testbed_kuramoto_wspread_*.yaml`, five rungs, sim-verified, transition
+predicted between spread 0.70 and 0.80). The session lost time to a merged ROS
+graph — another team on the same network and the default `ROS_DOMAIN_ID`,
+which put two publishers on `/poses`, produced `sequence size exceeds
+remaining buffer` deserialization failures, and tripped
+`crazyflie_node`'s 0.5 s `MOCAP_TIMEOUT` abort mid-flight.

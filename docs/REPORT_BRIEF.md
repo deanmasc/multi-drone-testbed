@@ -84,8 +84,25 @@ Headline figure: `docs/figures/key/1_threshold.png`.
 
 ### Secondary — and arguably more interesting: metric blindness
 
-**Whether a sim-to-hardware gap is visible at all is a property of the metric
-the paper chose, not of the hardware.** Two independent demonstrations:
+**A published metric can only see a sim-to-hardware gap if it is a function of
+the quantity the disturbance perturbs.** Four noise ladders now give all three
+possible outcomes, which is what makes the claim precise rather than cynical:
+
+| algorithm | did the flight degrade? | did its own metrics report it? |
+|---|---|---|
+| Coverage | yes, ×5.1 (×4.0 above null) | **no** — 4/4 flat, 2–9% spread |
+| Flocking | yes, ×1.95 above null | **no** — 4/4 flat |
+| Distance formation | yes, ×3.0 (×2.1 above null) | **yes** — 3/4 move, edge error 1.23→2.20 cm, Lyapunov W ×4.3 |
+| Kuramoto | **no** — 13.4→13.3 cm, sits on its null | n/a, nothing to report |
+
+An edge length is a direct function of the positions the noise corrupts, so it
+cannot be blind. A Voronoi cost and a phase order parameter are not, so they
+are. Kuramoto also shows that noise is **not universally harmful**: a law
+holding the fleet to a prescribed trajectory with strong position feedback
+averages radial noise out, while trochoidal (unanchored) and coverage (a
+diffusion) both move by ×5.
+
+Two independent demonstrations of the blindness half:
 
 - *Under sensor noise* (§16b): coverage's four published metrics (mean and worst
   distance to own Voronoi centroid, locational cost H, fraction of ticks where H
@@ -138,9 +155,12 @@ reach.
 
 ## 4. Limitations that must appear in the report
 
-1. **No error bars anywhere.** Every cell in every sweep is a single flight.
-   This is the weakest sentence in every section and should be stated once,
-   clearly, rather than hedged repeatedly.
+1. **Almost no error bars.** Every cell is a single flight except two, reflown
+   7 Oct: coverage 2 mm (10.3 and 7.9 cm — the two span 2.4 cm, wider than the
+   gap to the 5 mm rung, so that ladder's middle is not resolved) and flocking
+   0 mm (5.5 and 5.2 cm — highly repeatable, and still above its own 2 mm
+   rung, so that inversion is real rather than a bad run). Figure:
+   `docs/figures/repeatability/1_repeats.png`. State this once, clearly.
 2. **The placement fault** (§16c): 23 Sep – 30 Sep the real drone1 was placed on
    drone4's floor mark, 41–48 cm from its own. Corrected 6 Oct (0.6 and 2.1 cm).
    Deviation results survive because every comparison is against that run's own

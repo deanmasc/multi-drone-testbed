@@ -122,13 +122,14 @@ SPEC = {
     # breathing code, PROJECT_AIM 16f).
     'kuramoto': dict(
         title='kuramoto',
-        win=130.0,
+        # 7 Oct records run 89-93 s; engage + 2 s leaves 75 s in common.
+        win=73.0,
         ramp=RAMP4,
         pattern='kuramoto ring',
-        runs=[('0', 'REPLACE_kuramoto_n0.txt', 'testbed_kuramoto_k04.yaml'),
-              ('2', 'REPLACE_kuramoto_n2.txt', 'testbed_kuramoto_k04_n2.yaml'),
-              ('5', 'REPLACE_kuramoto_n5.txt', 'testbed_kuramoto_k04_n5.yaml'),
-              ('10', 'REPLACE_kuramoto_n10.txt', 'testbed_kuramoto_k04_n10.yaml')],
+        runs=[('0', 'kuramotoformation_20261007_155255.txt', 'testbed_kuramoto_k04.yaml'),
+              ('2', 'kuramotoformation_20261007_155019.txt', 'testbed_kuramoto_k04_n2.yaml'),
+              ('5', 'kuramotoformation_20261007_155610.txt', 'testbed_kuramoto_k04_n5.yaml'),
+              ('10', 'kuramotoformation_20261007_155918.txt', 'testbed_kuramoto_k04_n10.yaml')],
         # The four properties the law actually promises: phase lock, the ring
         # radius, even angular spacing, and no collisions. order_R and d_min
         # are "higher is better"; the other two are errors.
@@ -141,13 +142,14 @@ SPEC = {
     ),
     'distance': dict(
         title='distance formation',
-        win=130.0,
+        # The 0 mm control was stopped at 51 s, which caps the common window.
+        win=32.0,
         ramp=RAMP4,
         pattern='octahedron',
-        runs=[('0', 'REPLACE_distance_n0.txt', 'testbed_hexagon_hybrid_k04.yaml'),
-              ('2', 'REPLACE_distance_n2.txt', 'testbed_hexagon_hybrid_k04_n2.yaml'),
-              ('5', 'REPLACE_distance_n5.txt', 'testbed_hexagon_hybrid_k04_n5.yaml'),
-              ('10', 'REPLACE_distance_n10.txt', 'testbed_hexagon_hybrid_k04_n10.yaml')],
+        runs=[('0', 'distanceformation_20261007_152116.txt', 'testbed_hexagon_hybrid_k04.yaml'),
+              ('2', 'distanceformation_20261007_152831.txt', 'testbed_hexagon_hybrid_k04_n2.yaml'),
+              ('5', 'distanceformation_20261007_153222.txt', 'testbed_hexagon_hybrid_k04_n5.yaml'),
+              ('10', 'distanceformation_20261007_153646.txt', 'testbed_hexagon_hybrid_k04_n10.yaml')],
         # edge_rms is the promise -- the shape is defined by distances alone.
         # W_lyap is the convergence certificate the proof uses. Both are logged
         # natively here because the static config leaves breathing disabled, so
@@ -278,8 +280,17 @@ def analyse(spec, label, rec, cfgname):
                          f"{spec['win']:.0f} s window closes at {tg[-1]:.0f} s")
     Pg = np.stack([np.stack([np.interp(tg, t, P[:, n, ax]) for ax in (0, 1)], 1)
                    for n in range(len(ids))], 1)
-    tilt = np.interp(tg, t, D[:, cols.index(f'tilt_{reals[0]}')])
-    z = np.interp(tg, t, D[:, cols.index(f'z_{reals[0]}')])
+    # KuramotoMetrics records carry no z/tilt: metrics_recorder._write_header
+    # writes metrics.columns() rather than all_columns() for that one metric
+    # set, so the clean /poses channel is simply absent from those files. The
+    # ladder is still measurable, but every surviving column is computed from
+    # the NOISY position, which makes the null model the only reference.
+    tilt_col = f'tilt_{reals[0]}'
+    tilt = (np.interp(tg, t, D[:, cols.index(tilt_col)]) if tilt_col in cols
+            else np.full_like(tg, np.nan))
+    z_col = f'z_{reals[0]}'
+    z = (np.interp(tg, t, D[:, cols.index(z_col)]) if z_col in cols
+         else np.full_like(tg, np.nan))
 
     # The designed pattern: this config in the noiseless simulator, started from
     # where the fleet actually was when the algorithm engaged. Started from the
@@ -346,7 +357,8 @@ def analyse(spec, label, rec, cfgname):
         speed=float(np.median(speed)), speed_p95=float(np.percentile(speed, 95)),
         accel_p95=float(np.percentile(accel, 95)), accel_max=float(accel.max()),
         tilt_med=float(np.median(tilt)), tilt_p95=float(np.percentile(tilt, 95)),
-        tilt_max=float(tilt.max()),
+        tilt_max=float(np.max(tilt)) if np.isfinite(tilt).any() else float('nan'),
+        has_tilt=bool(np.isfinite(tilt).any()),
         z_sd=float(np.std(z)),
         u_med=float(np.median(np.hypot(*u.T))),
         clip=float(np.mean(np.any(np.abs(u) > clamp * 0.999, axis=1))),
@@ -409,7 +421,10 @@ def table(spec, runs):
           f"and sits {top['dev_rms'] / top['dev_rms_null']:.2f}x its own sensor-only null; "
           f"ripple {top['ripple'] / base['ripple']:.1f}x and "
           f"{top['ripple'] / top['ripple_null']:.2f}x its null; "
-          f"median tilt {top['tilt_med'] / base['tilt_med']:.1f}x on the clean channel")
+          + (f"median tilt {top['tilt_med'] / base['tilt_med']:.1f}x on the clean channel"
+             if base.get('has_tilt') and base['tilt_med'] > 0
+             else "tilt NOT RECORDED for this metric set -- no clean channel, "
+                  "so read every bar against its null"))
     print(f"flown speed and acceleration are NOT reported: differencing the recorded "
           f"position\nat 10 Hz multiplies the injected noise by 14 and 245, which is most "
           f"of what\nthose two measures were showing.")
@@ -587,13 +602,26 @@ def fig_two_benchmarks(spec, runs, out):
                         wspace=0.30, hspace=0.78)
 
     def panel(ax, vals, fmt, unit, title, colours, note, note_ink, nulls=None):
+        # KuramotoMetrics records carry no z/tilt at all (see analyse()), so a
+        # whole panel can be NaN. Say so on the axes rather than crashing or
+        # drawing an empty frame that looks like a measured zero.
+        if not np.isfinite(vals).any():
+            ax.set_xticks([]); ax.set_yticks([])
+            for sp in ax.spines.values():
+                sp.set_visible(False)
+            ax.set_facecolor('#f4f2ee')
+            ax.annotate('not recorded\nfor this algorithm', (0.5, 0.5),
+                        xycoords='axes fraction', ha='center', va='center',
+                        fontsize=9, color=MUTED)
+            ax.set_title(title, loc='left', fontsize=9.5, color=MUTED, pad=17)
+            return
         ax.bar([X[r['label']] for r in runs], vals, width=0.62, color=colours)
-        top = max(vals)
+        top = np.nanmax(vals)
         if nulls is not None:
             for r, nv in zip(runs, nulls):
                 ax.plot([X[r['label']] - 0.36, X[r['label']] + 0.36], [nv, nv],
                         color=INK, lw=1.4, solid_capstyle='butt', zorder=4)
-            top = max(top, max(nulls))
+            top = max(top, np.nanmax(nulls))
         for r, v in zip(runs, vals):
             ax.annotate(fmt.format(v), (X[r['label']], v), textcoords='offset points',
                         xytext=(0, 3), ha='center', fontsize=8, color=INK)
@@ -651,9 +679,24 @@ def fig_two_benchmarks(spec, runs, out):
     fig.supxlabel("noise added to drone1's VICON position, mm per axis",
                   x=0.008, ha='left', fontsize=9.5, color=MUTED)
     n_nat = len(spec['native'])
-    fig.suptitle(f"The noise degrades the {spec['title']} flight, but "
-                 f"{n_flat} of the {n_nat} metrics the theory is judged on never "
-                 f"report it",
+    # The headline has to follow the data, not assume blindness. Three cases
+    # occur in this corpus: the flight degrades and the metrics miss it
+    # (coverage, flocking), the flight degrades and they catch it (distance
+    # formation), and the flight does not degrade at all (kuramoto).
+    worst = runs[-1]
+    flew_worse = worst['dev_rms'] > 1.5 * worst['dev_rms_null']
+    if not flew_worse:
+        headline = (f"The {spec['title']} flight does not degrade with noise — "
+                    f"deviation sits on its own sensor-only null")
+    elif n_flat >= n_nat - 1:
+        headline = (f"The noise degrades the {spec['title']} flight, but "
+                    f"{n_flat} of the {n_nat} metrics the theory is judged on "
+                    f"never report it")
+    else:
+        headline = (f"The noise degrades the {spec['title']} flight, and "
+                    f"{n_nat - n_flat} of the {n_nat} metrics the theory is "
+                    f"judged on report it")
+    fig.suptitle(headline,
                  x=0.008, y=0.988, va='top', ha='left', fontsize=12,
                  fontweight='bold', color=INK)
     # Kept out of the suptitle so it can be set smaller and lighter: three
