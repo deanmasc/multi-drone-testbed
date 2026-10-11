@@ -48,6 +48,17 @@ RUNS = [
 ]
 CLAMP = 3.5
 
+# Four of the eight rungs, for the version that has to fit on a page. Chosen
+# to straddle the onset rather than to sample the range evenly: r1 and r2 are
+# near-identical (both quiet), and r5/r6/r10 are near-identical to r4 (all
+# broken), so spending rows on them buys nothing. What is left is one clean
+# rung, the transitional one, the first clearly broken one, and the extreme.
+#   r2  k*tau 0.56  quiet -- and the config every noise ladder is flown at
+#   r3  k*tau 0.84  just above the 0.67-0.81 band, visibly transitional
+#   r4  k*tau 1.12  sustained oscillation
+#   r14 k*tau 3.92  the far end
+PAPER_RUNGS = ('r2', 'r3', 'r4', 'r14')
+
 DT = 0.1          # the recorder's row interval
 EDGE = 1.3        # m, end of the clean window
 PATTERN_HZ = 0.4  # below this is the designed pattern (fast lap 8-19 s)
@@ -584,12 +595,14 @@ def _restarted_design(r, t0, secs):
     return r['tau'][k0] + ts, np.array(ph)
 
 
-def fig_expected(runs, out, where='start', ref='setpoint', secs=20.0):
+def fig_expected(runs, out, where='start', ref='setpoint', secs=20.0,
+                 suffix='', compact=False):
     """drone1: a reference path against where it actually was.
     ref 'setpoint': the position crazyflie_node commanded, rebuilt from the log.
     ref 'design': the designed pattern -- from the real start ('start'), or
     restarted from where the fleet actually was ('middle')."""
-    fig, axs = plt.subplots(len(runs), 2, figsize=(11, 3.3 * len(runs)),
+    row_h, width = (2.5, 9.2) if compact else (3.3, 11)
+    fig, axs = plt.subplots(len(runs), 2, figsize=(width, row_h * len(runs)),
                             gridspec_kw=dict(width_ratios=[1, 2.4]))
     axs = np.atleast_2d(axs)
     if ref == 'setpoint':
@@ -623,7 +636,11 @@ def fig_expected(runs, out, where='start', ref='setpoint', secs=20.0):
         ax.set_ylim(-1.1, 1.1)
         ax.set_xlabel('x, m')
         ax.set_ylabel('y, m')
-        ax.set_title(f"{name(r['label'])}: path from above", loc='left', fontsize=9)
+        # At the compact width the two row titles collide, so the left one
+        # drops to just the rung label and doubles as the row heading.
+        ax.set_title(name(r['label']) if compact
+                     else f"{name(r['label'])}: path from above",
+                     loc='left', fontsize=9)
 
         ax = row[1]
         ax.plot(et[ms], exp_[:, 0], label=lab, **ekw)
@@ -631,8 +648,11 @@ def fig_expected(runs, out, where='start', ref='setpoint', secs=20.0):
         ax.set_xlim(a, b)
         ax.set_ylim(-1.1, 1.1)
         ax.set_ylabel('x position, m')
-        ax.set_title(f"{name(r['label'])}: x position over time "
-                     f"(designed loop takes {r['fast_T']:.0f} s)", loc='left', fontsize=9)
+        ax.set_title(f"x position over time (designed loop takes {r['fast_T']:.0f} s)"
+                     if compact else
+                     f"{name(r['label'])}: x position over time "
+                     f"(designed loop takes {r['fast_T']:.0f} s)",
+                     loc='left', fontsize=9)
         ax.legend(loc='upper right', fontsize=8, ncol=2)
     axs[-1, 1].set_xlabel('s since the algorithm started')
     span = f'first {secs:.0f} s of each flight' if where == 'start' else \
@@ -641,16 +661,17 @@ def fig_expected(runs, out, where='start', ref='setpoint', secs=20.0):
         title = (f'drone1: commanded vs actual position, {span}\n'
                  'commanded = the setpoint crazyflie_node streamed, rebuilt from the log '
                  '(the setpoint itself is not recorded)')
-        fname = '6_commanded_vs_actual.png' if where == 'start' else '7_commanded_vs_actual_middle.png'
+        fname = ('6_commanded_vs_actual' if where == 'start'
+                 else '7_commanded_vs_actual_middle') + suffix + '.png'
     elif where == 'start':
         title = (f'drone1: design vs actual position, {span}\n'
                  'design started from where the drones actually were when the algorithm started')
-        fname = '8_design_vs_actual.png'
+        fname = '8_design_vs_actual' + suffix + '.png'
     else:
         title = (f'drone1: design vs actual position, {span}\n'
                  'design restarted from where the drones actually were at the start of this '
                  'window (fast loops filtered out)')
-        fname = '9_design_vs_actual_middle.png'
+        fname = '9_design_vs_actual_middle' + suffix + '.png'
     fig.suptitle(title, x=0.01, ha='left', fontsize=11, fontweight='bold', color=INK)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     fig.savefig(os.path.join(out, fname))
@@ -691,6 +712,12 @@ def main():
     for where in ('start', 'middle'):
         for ref in ('setpoint', 'design'):
             fig_expected(runs, a.out, where=where, ref=ref)
+    # The same figure cut to four rungs, for the write-up: eight rows do not
+    # fit on a page and three of the eight are visually redundant.
+    paper = [r for r in runs if r['label'] in PAPER_RUNGS]
+    if len(paper) == len(PAPER_RUNGS):
+        fig_expected(paper, a.out, where='start', ref='design',
+                     suffix='_4rung', compact=True)
     # A machine-readable copy of the table, so the cross-algorithm figure
     # (tools/plot_key.py) can put these rungs on the same axes as the coverage
     # and flocking ladders without anyone retyping numbers.

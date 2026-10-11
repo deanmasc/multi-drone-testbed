@@ -310,6 +310,13 @@ CAPTIONS = {
         'Designed pattern vs flown pattern',
         'The design is simulated from the real start positions, not the config '
         'marks — the drones sat on each other\'s marks on 15 Sep.'),
+    'trochoidal_ladder/8_design_vs_actual_4rung.png': (
+        'Designed vs flown, the four rungs that carry the result',
+        'The same figure cut for the write-up: one clean rung (k·τ 0.56), the '
+        'transitional one (0.84), the first clearly broken one (1.12) and the '
+        'far end (3.92). The five omitted rungs are visually redundant with '
+        'these — see the full eight above. Set PAPER_RUNGS in '
+        'tools/plot_trochoidal_ladder.py to choose a different four.'),
     'trochoidal_ladder/9_design_vs_actual_middle.png': (
         'The same, mid-flight',
         'Middle window, same reference.'),
@@ -532,12 +539,19 @@ def key_cards():
          'a phase order parameter are not. Kuramoto completes the set — there '
          'the flight did not degrade at all, so its flat metrics are simply '
          'telling the truth.'),
-        ('trochoidal_ladder/8_design_vs_actual.png',
-         'Trochoidal: where the ladder started',
-         'The original finding, kept here for comparison: the designed pattern '
-         'against what flew, across β = 1 to 14. The design is simulated from '
-         'the real start positions, because the drones sat on each other\'s '
-         'marks on 15 Sep.'),
+        ('trochoidal_ladder/8_design_vs_actual_4rung.png',
+         'Trochoidal: the threshold, one flight at a time',
+         'Where the ladder started, cut to the four rungs that carry it. At '
+         'k·τ 0.56 and 0.84 the drone sits on the designed pattern. At 1.12 a '
+         'ripple appears on top of it and never decays; at 3.92 the pattern '
+         'is barely visible under the oscillation — and the loops in the '
+         'left-hand panels are the same 4τ ≈ 1.1 s period every other '
+         'algorithm produces. β = 1 is omitted because it is '
+         'indistinguishable from β = 2, and β = 5, 6 and 10 because they are '
+         'indistinguishable from β = 4; all eight are on the Trochoidal tab. '
+         'The design is simulated from each run\'s real start positions '
+         'rather than the config marks, which matters for β = 14 — flown '
+         '15 Sep, when the drones sat on each other\'s marks.'),
     ]
 
 
