@@ -317,6 +317,71 @@ def fig_expected_vs_actual(runs, algo, spec, out, span=25.0):
     plt.close(fig)
 
 
+def fig_expected_rows(runs, algo, spec, out, span=20.0):
+    """One row per rung: the designed path beside the flown one, and x over time.
+
+    Same layout as the trochoidal ladder's 8_design_vs_actual, so the two
+    algorithms can be read side by side in the write-up. The window is the
+    middle of each flight rather than the first seconds, because unlike
+    trochoidal these laws spend their opening seconds converging to a lattice
+    or a configuration, and that transient is not what the rung is about.
+    """
+    cc = _cols(runs, algo)
+    fig, axs = plt.subplots(len(runs), 2, figsize=(9.2, 2.5 * len(runs)),
+                            gridspec_kw=dict(width_ratios=[1, 2.4]))
+    axs = np.atleast_2d(axs)
+
+    # One set of limits for every row, so the rows are directly comparable.
+    lim = 0.0
+    for r in runs:
+        j = r['real'][0] if r['real'] else 0
+        lim = max(lim, float(np.abs(r['P'][:, j]).max()))
+    lim = lim * 1.15 + 0.05
+
+    for row, r in zip(axs, runs):
+        j = r['real'][0] if r['real'] else 0
+        mid = 0.5 * r['t'][-1]
+        t0, t1 = max(r['t'][0], mid - span / 2), min(r['t'][-1], mid + span / 2)
+        m = (r['t'] >= t0) & (r['t'] <= t1)
+        st = r['sim']['t'] - r['sim']['t'][0]
+        want = np.stack([np.interp(r['t'][m] + 2.0, st, r['sim']['P'][:, j, ax])
+                         for ax in (0, 1)], 1)
+        act = r['P'][m, j]
+        c = cc[r['label']]
+
+        ax = row[0]
+        ax.plot(want[:, 0], want[:, 1], color=C.DESIGN, lw=3.5,
+                label='expected (design)', solid_capstyle='round')
+        ax.plot(act[:, 0], act[:, 1], color=c, lw=1.1, alpha=0.85,
+                label='actual (VICON)')
+        ax.set_aspect('equal')
+        ax.set_xlim(-lim, lim); ax.set_ylim(-lim, lim)
+        ax.set_xlabel('x, m'); ax.set_ylabel('y, m')
+        ax.set_title(rung_label(r, two_line=False), loc='left', fontsize=9)
+
+        ax = row[1]
+        ax.plot(r['t'][m], want[:, 0], color=C.DESIGN, lw=3.5,
+                label='expected (design)', solid_capstyle='round')
+        ax.plot(r['t'][m], act[:, 0], color=c, lw=1.3, alpha=0.85,
+                label='actual (VICON)')
+        ax.set_xlim(t0, t1); ax.set_ylim(-lim, lim)
+        ax.set_ylabel('x position, m')
+        gap = np.hypot(*(act - want).T) * 100
+        ax.set_title(f'x position over time — median {np.median(gap):.0f} cm off',
+                     loc='left', fontsize=9)
+        ax.legend(loc='upper right', fontsize=8, ncol=2)
+
+    axs[-1, 1].set_xlabel('s since the algorithm started')
+    fig.suptitle(f"drone1: design vs actual position, {span:.0f} s from the "
+                 f"middle of each {spec['algo']} flight\n"
+                 '"design" is the same config in the noiseless simulator, so the '
+                 'distance between the two lines is the sim-to-hardware gap',
+                 x=0.01, ha='left', fontsize=11, fontweight='bold', color=C.INK)
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    fig.savefig(os.path.join(out, '2b_design_vs_actual_rows.png'))
+    plt.close(fig)
+
+
 def fig_promise(runs, algo, spec, out):
     cc = _cols(runs, algo)
     fig, axes = plt.subplots(1, len(runs), figsize=(3.9 * len(runs), 3.2),
@@ -595,6 +660,7 @@ def main():
 
     fig_summary(runs, a.algo, spec, out)
     fig_expected_vs_actual(runs, a.algo, spec, out)
+    fig_expected_rows(runs, a.algo, spec, out)
     fig_promise(runs, a.algo, spec, out)
     fig_wobble_loops(runs, a.algo, spec, out)
     fig_delay(runs, a.algo, spec, out)

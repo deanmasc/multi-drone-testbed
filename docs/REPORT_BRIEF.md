@@ -42,45 +42,71 @@ is the core analytical move of the report.
 
 ---
 
-## 2. The claims, in order of strength
+## 2. The claims
+
+### The rule that decides what each sweep is worth
+
+Dean's own test, and it should govern how the report is organised:
+
+> Where a sweep **varies a gain**, that gain has to be the paper's. Where it
+> **holds the gain fixed** and varies something physical, whose gain it is does
+> not matter — it is a constant in every rung.
+
+The reason is that these laws were written for idealised dynamics and most of
+them have to be *bridged* to a double-integrator quadrotor before they will fly
+at all. The bridge contains a velocity term. Varying a term we wrote and
+reporting that it broke the flight proves nothing about anyone's paper. Holding
+it fixed and varying the hardware does.
+
+Run over the corpus:
+
+| sweep | what varies | whose gain | use it? |
+|---|---|---|---|
+| Trochoidal β ladder | `beta` | **the paper's**, double-integrator paper | ✅ |
+| Flocking c-rescale | `c2_gamma + c2_alpha·Σbump` | **the paper's**, double-integrator paper | ✅ |
+| Coverage speed ladder | `gain_kd` | ours — Cortés is single-integrator | ⚠️ caveat it |
+| Kuramoto k·τ ladder | `velocity_gain` | ours — the paper has no vehicle | ❌ not evidence |
+| Distance formation k·τ ladder | `gain_kv` | unknown, no citation | ❌ until resolved |
+| **All four noise ladders** | mocap noise; gain fixed | n/a | ✅ |
+| **Fleet size** | number of real aircraft; gain fixed | n/a | ✅ |
+| **Metric blindness** | nothing in the law moves | n/a | ✅ |
 
 ### Primary — the k·τ threshold
 
 Every one of the five control laws commands an acceleration containing a brake
 term `−k·v` acting on a velocity measured **τ ≈ 0.28 s ago**. Form the
 dimensionless product **k·τ**, where k is the coefficient on the drone's *own*
-velocity:
+velocity. **Below k·τ ≈ 0.67 nothing oscillates (0.5–1.9 cm); above ≈ 0.81
+everything does (16–23 cm), at a period of 4τ ≈ 1.1 s.**
+
+**The claim rests on trochoidal and flocking** — two papers, both genuinely
+double-integrator, both the authors' own gains, 14 rungs between them. That is
+a solid result and it is clean. Headline figures:
+`docs/figures/key/1_threshold.png` and
+`docs/figures/trochoidal_ladder/8_design_vs_actual_4rung.png`.
+
+The other three algorithms **corroborate the mechanism but are not evidence for
+it**, because the gain varied is one we wrote. Present them that way — as
+showing that the bridge a law needs in order to fly has a stability limit the
+source paper gives no guidance about, which is a different and also real
+finding. Do not count them as independent confirmations.
 
 | algorithm | k is | source paper |
 |---|---|---|
 | Trochoidal consensus | `beta` | Monsingh, Sinha & Chung, *EJC* 76 (2024) 100928, eq. (7) |
-| Coverage | `gain_kd` | Cortes, Martinez, Karatas & Bullo, *IEEE TRA* 20(2), 2004 |
 | Flocking | `c2_gamma + c2_alpha · Σ bump` | Olfati-Saber, *IEEE TAC* 51(3), 2006, Algorithm 2 |
-| Kuramoto formation | `velocity_gain` | **no citation recorded in the repo** |
+| Coverage | `gain_kd` | Cortes, Martinez, Karatas & Bullo, *IEEE TRA* 20(2), 2004 — but single-integrator, so `gain_kd` is **ours** (`PROJECT_AIM.md` §5b) |
+| Kuramoto formation | `velocity_gain` | Schmidt, Papachristodoulou, Münz & Allgöwer, *Automatica* 48 (2012) 3008, eq. (2) — **phase model only, no vehicle**, so the velocity term is ours |
 | Distance formation | `gain_kv` | **no citation recorded in the repo** |
 
-> **Citation gap — resolve before writing.** `PROJECT_AIM.md` §5a cites papers
-> for the first three only. The Kuramoto and distance-formation implementations
-> have no source anywhere in the repo, the configs, or the code comments. Ask
-> Dean for them. Until then write **"five control laws"**, never "five papers",
-> and do not describe the 6 Oct ladders as testing anyone's published claim —
-> only as testing the same *mechanism*. Everything else about those two results
-> stands; it is the attribution that is missing, not the data.
-
-**Below k·τ ≈ 0.67 nothing oscillates (0.5–1.9 cm). Above ≈ 0.81 everything
-does (16–23 cm), with a period of 4τ ≈ 1.1 s regardless of which paper the law
-came from.** 25 real-drone rungs, five control laws.
+> **Two attribution notes.** (a) The Kuramoto paper is cited for the *coupling*
+> only: `phase_gain` is its K, and our `weights` are its aₖᵢ/dᵢ. The phase
+> offsets and `tracking_phase_gain` are ours too. (b) Nothing anywhere records
+> a source for distance formation's `gain_kv` — ask the team. Write **"five
+> control laws"**, never "five papers".
 
 The onset band was **narrowed from 0.67–1.01 to 0.67–0.81 on 6 Oct**
-(`PROJECT_AIM.md` §16g). Use 0.67–0.81. The older figures and §13/§15 text say
-0.67–1.01; they predate the Kuramoto and distance-formation rungs.
-
-**Kuramoto and distance formation are an out-of-sample test**, not another fit:
-their rungs were chosen in advance from the other three algorithms' numbers and
-nothing was tuned afterwards (§16e). Say so in the report — it is the
-difference between a correlation and a prediction.
-
-Headline figure: `docs/figures/key/1_threshold.png`.
+(`PROJECT_AIM.md` §16g). The older figures and §13/§15 text say 0.67–1.01.
 
 ### Secondary — and arguably more interesting: metric blindness
 
@@ -143,6 +169,8 @@ Two have been swept:
 | `testbed_fig4.yaml` | "drone1–drone4 is 0.354 m, the only safe pair" | true of the configured marks; the drone was not on its mark 23 Sep – 30 Sep, and as flown the pair's designed separation was 15 cm median / 6 cm min |
 | §13, §15f | the onset band "0.67–1.01" | narrowed to **0.67–0.81** on 6 Oct (§16g) |
 | any distance-formation record before a rebuild | the **header's** breathing parameters | the header is written by the recorder from `src/`; the controller was running the install space and never breathed (§16f) |
+| anywhere | the Kuramoto, coverage or distance-formation k·τ ladders as **independent confirmations** of the threshold | the gain varied in each is one we wrote, not the paper's — see the rule at the top of §2 |
+| kuramoto noise ladder | tilt or altitude | `metrics_recorder._write_header` writes `columns()` not `all_columns()` for `KuramotoMetrics` alone, so those records contain no `/poses` data at all |
 
 **The general rule this corpus learned twice:** before claiming a hardware
 effect on a noise rung, ask what a *null* flight would have read — the control

@@ -399,6 +399,15 @@ CAPTIONS = {
         'Top: where the law wanted the real drone (its own config in '
         'simulation) against where it went, over 25 s mid-flight. Bottom: the '
         'distance between them.'),
+    '*/2b_design_vs_actual_rows.png': (
+        'Designed vs flown, one row per rung',
+        'The same layout as the trochoidal ladder\'s four-rung figure, so the '
+        'two can be read side by side. Left: the path from above. Right: x '
+        'over time, with the median distance from the design in the title. '
+        'The window is the middle of each flight rather than the opening '
+        'seconds, because these laws spend their first seconds converging to '
+        'a lattice or a configuration and that transient is not what the rung '
+        'is about.'),
     '*/3_promise.png': (
         'The promised property over time',
         'One panel per rung, hardware against simulation of that same file. A '
@@ -450,41 +459,19 @@ def key_cards():
     g = lambda k, r, f, sc=1.0, fmt='{:.0f}': _num(k, r, f, sc, fmt)
     return [
         ('key/1_threshold.png', 'The result, in one figure',
-         'Twenty flights, five unrelated control laws, plotted against '
-         'a single number: the gain each law applies to a drone\'s own velocity, '
+         'Twenty-five rungs, five unrelated control laws, plotted against a '
+         'single number: the gain each law applies to a drone\'s own velocity, '
          'times the 0.28 s it takes that velocity to become thrust. Below '
-         'k·τ ≈ 0.7 nothing oscillates. Above ≈ 1.0 everything does — and when it '
-         'does, the period is 4τ regardless of which paper the law came from. '
-         'Kuramoto and distance formation were added on 6 Oct as a prediction '
-         'test: both were stepped straight onto the ladder at 1.4 / 2.9 / 4.3, '
-         'and both broke exactly where the other three said they would.'),
-        ('kuramoto_ladder/2_expected_vs_actual.png',
-         'Kuramoto: the same threshold, on a fourth paper\'s law',
-         f'Four oscillators holding a 0.65 m ring. Only the own-velocity gain '
-         f'changes between the three panels — the ring the law asks for is '
-         f'identical. At k·τ 0.39 the drone flies the circle '
-         f'{g("kuramoto_ladder", "q04", "design_gap")} cm off. At 0.81 it flies '
-         f'a rosette {g("kuramoto_ladder", "q08", "design_gap")} cm off, at '
-         f'1.20 a denser one {g("kuramoto_ladder", "q12", "design_gap")} cm off, '
-         f'ringing at 1.2 s against 4τ = 1.1 s. The ladder was designed before '
-         f'the flight from the other three algorithms\' numbers; nothing here '
-         f'was tuned afterwards.'),
-        ('kuramoto_ladder/3_promise.png',
-         'And the paper\'s own metric reports none of it',
-         f'The order parameter R is what a Kuramoto paper plots: 1.0 means the '
-         f'oscillators are perfectly in phase. Across a ladder that takes the '
-         f'aircraft from {g("kuramoto_ladder", "q04", "wobble", 100, "{:.1f}")} cm '
-         f'of oscillation to {g("kuramoto_ladder", "q12", "wobble", 100, "{:.1f}")} cm, '
-         f'29° of bank and 80% of its acceleration clipped, R reads '
-         f'{g("kuramoto_ladder", "q04", "promise_settled", 1, "{:.4f}")}, '
-         f'{g("kuramoto_ladder", "q08", "promise_settled", 1, "{:.4f}")} and '
-         f'{g("kuramoto_ladder", "q12", "promise_settled", 1, "{:.4f}")} — within '
-         f'1% of simulation on every rung. Phase synchronisation survives '
-         f'intact while the flight does not. Distance formation is the '
-         f'counter-example that makes the point sharper: its edge error does '
-         f'report the failure — 0.006 m at k·τ 0.39 against 0.107 m at 0.81, '
-         f'and 27× its own simulation at that rung. Whether the sim-to-hardware '
-         f'gap is visible at all depends on which metric the paper chose.'),
+         'k·τ ≈ 0.67 nothing oscillates (0.5–1.9 cm); above ≈ 0.81 everything '
+         'does (16–23 cm), at a period of 4τ ≈ 1.1 s whichever law it is. '
+         'Read it with one caveat. Only trochoidal (β) and flocking (c2) vary '
+         'a gain their source paper actually specifies, and those two — 14 '
+         'rungs — carry the claim. Coverage, Kuramoto and distance formation '
+         'vary a velocity term we had to add before a single-integrator or '
+         'phase-only law would fly at all, so they corroborate the mechanism '
+         'without being independent evidence for it. That is still a finding: '
+         'the bridge a law needs in order to fly has a stability limit the '
+         'paper gives no guidance about.'),
         ('coverage_ladder/2_expected_vs_actual.png',
          'Coverage: the quiet algorithm, made to ring on purpose',
          f'The same law at three speeds. At k·τ 0.34 and 0.67 the drone flies '
@@ -492,7 +479,11 @@ def key_cards():
          f'{g("coverage_ladder", "c2", "design_gap")} cm away. At k·τ 1.01 it misses by '
          f'{g("coverage_ladder", "c3", "design_gap")} cm and covers the room in loops. '
          f'Coverage was the robust control condition; this is the first time the '
-         f'project produced a failure rather than found one.'),
+         f'project produced a failure rather than found one. One caveat: '
+         f'gain_kd is OURS, not Cortes\' — that paper is single-integrator and '
+         f'this is the PD wrapper that makes it flyable (PROJECT_AIM 5b). So '
+         f'it is a result about the bridge a law needs in order to fly, not '
+         f'about the paper\'s own recommended gain.'),
         ('flocking_ladder/2_expected_vs_actual.png',
          'Flocking: the same fix, on a different paper\'s law',
          f'Slowing the clock — position gains ×c², velocity gains ×c, same '
@@ -733,8 +724,8 @@ def build(embed=False):
              if os.path.exists(os.path.join(FIG, rel))]
     if cards:
         parts.append('<section class="key" data-k="all"><h2>The findings</h2>'
-                     '<p class="blurb">Four figures carry the result. Everything '
-                     'below them is supporting detail, folded away.</p>'
+                     '<p class="blurb">These carry the result. Everything below them '
+                     'is supporting detail, folded away.</p>'
                      '<div class="keygrid">')
         for rel, title, note in cards:
             shown.add(rel)

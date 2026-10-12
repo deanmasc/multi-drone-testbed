@@ -183,10 +183,10 @@
     "shared": 0.00693834460154442,
     "window": 119.200143,
     "promise_settled": 0.14390595397489542,
-    "promise_sim_settled": 0.10219002820366437,
+    "promise_sim_settled": 0.10219001024513544,
     "d_min": 0.45973140167364024,
     "vel_spread": 0.07522215481171547,
-    "design_gap": 21.369107179882604,
+    "design_gap": 21.627932193864506,
     "drones": {
       "drone1": {
         "real": true,
