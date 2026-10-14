@@ -57,7 +57,10 @@ FIGURES = [
      'across a ladder that moves the aircraft by a factor of five.'),
     ('fig_noise_coverage_box', COL,
      'Deviation from the designed coverage configuration against injected '
-     'position noise, with the sensor-only null marked on each rung.'),
+     'position noise. Box is the middle half of the flight, whiskers the 5th '
+     'to 95th percentile, line the median. Median deviation runs 3.5, 6.4, '
+     '5.8, 8.3 and 13.3 cm. Every parameter other than the noise level is '
+     'identical across the five flights.'),
     ('fig_flocking_design', FULL,
      'Designed against flown position for Olfati-Saber flocking at three '
      'time-rescalings, 20 s from the middle of each flight. The rescaling '
@@ -66,15 +69,40 @@ FIGURES = [
      'rows.'),
     ('fig_noise_flocking_box', COL,
      'Deviation from the designed flocking lattice against injected position '
-     'noise. The control sits above the 2 mm rung; both were flown twice and '
-     'reproduce to 0.3 cm, so the ordering is a real property of the ladder '
-     'rather than a bad flight.'),
+     'noise. Median deviation runs 5.1, 4.5, 8.2 and 9.1 cm. The control '
+     'reads above the 2 mm rung; both of those conditions were flown twice '
+     'and reproduce to within 0.3 cm, so the ordering is a property of the '
+     'ladder rather than a bad flight.'),
+    ('fig_distance_design', FULL,
+     'Designed against flown position for the distance-based formation at '
+     'three damping settings, 20 s from the middle of each flight. The law '
+     'holds a six-agent octahedron by inter-agent distances alone, with one '
+     'real aircraft. At k·τ 0.39 the drone sits on its station, 1 cm from '
+     'where the law wanted it. At 0.81 it circles a 26 cm orbit around that '
+     'station and at 1.20 a 40 cm one, at about 1.1 s per lap in both cases. '
+     'Only the damping gain differs between rows; the commanded shape is '
+     'identical.'),
+    ('fig_noise_distance_box', COL,
+     'Deviation from the designed octahedron against injected position noise, '
+     'flown at k·τ 0.39 where the gain ladder is quiet. Median deviation runs '
+     '1.2, 2.4, 2.7 and 3.6 cm.'),
+    ('fig_distance_benchmarks', FULL,
+     'Distance-based formation under injected position noise. Top row: how '
+     'the aircraft flew. Bottom row: the three quantities the formation '
+     'result is stated in — the edge-length error the theorem bounds, the '
+     'shape error after a best rigid fit, and the Lyapunov function the '
+     'convergence proof is built on. Unlike coverage, whose published '
+     'quantities stay within a few percent of their mean across the same '
+     'lever, all three move with the noise: the edge error by 54% of its '
+     'mean, the shape error by 51%, and W by 133%. A shape defined by '
+     'distances is a direct function of the positions the noise corrupts, so '
+     'its metric cannot be blind to it.'),
     ('fig_noise_kuramoto_box', COL,
      'Deviation from the designed ring for the Kuramoto law against injected '
-     'position noise. Every rung sits on its own sensor-only null, so the '
-     'injection accounts for the whole reading and the flight itself does not '
-     'degrade — unlike the trochoidal and coverage ladders, which move by a '
-     'factor of five under the same lever.'),
+     'position noise. Median deviation runs 12.0, 12.3, 11.8 and 12.1 cm — '
+     'flat across the whole ladder, against a baseline gap of 12 cm. Under '
+     'the same lever the trochoidal and coverage ladders move by a factor of '
+     'four to five.'),
 ]
 
 EXTRA_CSS = """
