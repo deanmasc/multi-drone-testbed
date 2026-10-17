@@ -1,10 +1,5 @@
 # Project Aim
 
-*Written 2026-09-01, after the supervisor meeting. This document exists because
-the team's working understanding of the project ("run algorithms, measure how
-far the real flight deviates from the simulated one") was not what the
-supervisor was asking for. This is the corrected framing.*
-
 ---
 
 ## 1. The aim, in one sentence
