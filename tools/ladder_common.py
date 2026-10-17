@@ -365,7 +365,7 @@ def recompute_coverage_H(rec, P, t_start):
     return H
 
 
-def recompute_distance_edges(rec, P, scale=1.0):
+def recompute_distance_edges(rec, P, scale=1.0, vel=None):
     """Edge-length error of a distance formation, computed from positions.
 
     The recorder NaNs every distance-formation metric when the controller's
@@ -374,22 +374,47 @@ def recompute_distance_edges(rec, P, scale=1.0):
     that guard, but the positions are logged and the shape the controller
     actually held was the static one, so the error is recoverable here.
 
-    Returns (edge_rms, d_min, shape_err), each a series over the record.
+    Returns (edge_rms, d_min, shape_err, V_pot, W_lyap), each a series over
+    the record, matching the recorder's own definitions in
+    tools/metrics_recorder.py:
+
+      V_pot   0.25 kp sum (|p_a - p_b|^2 - d^2)^2, plus 0.5 kp_anchor |p - p*|^2
+              for each anchored agent. This is the potential the law descends,
+              written in the SQUARED-distance error rather than the length
+              error, because only the first is the Lyapunov candidate.
+      W_lyap  V_pot + K, K = 0.5 sum |v|^2.
+
+    V_pot is a pure function of position and is exact here. K is not: `vel`
+    has to be supplied, and differencing the logged position multiplies any
+    noise in it by about 14 at the recorder's 10 Hz (PROJECT_AIM §16a). On a
+    quiet gain-ladder flight that is VICON jitter only and K sits near the
+    settled V, but on a noise rung K recomputed this way is an artefact. With
+    `vel=None`, K is zero and W_lyap is returned as V_pot alone.
     """
     from drone_testbed.algorithms.distance_formation import formation_spec
     targets, edges, dist = formation_spec(rec['params'], rec['ids'])
     centre = np.asarray(rec['params'].get('formation_center', [0.0, 0.0]), float)
     targets = centre + scale * (np.asarray(targets, float) - centre)
     dist = np.asarray(dist, float) * scale
+    kp = float(rec['params'].get('gain_kp', 0.6))
+    anchor_kp = float(rec['params'].get('anchor_gain_kp', 0.4))
+    anchors = [rec['ids'].index(str(a)) for a in (rec['params'].get('anchor') or [])
+               if str(a) in rec['ids']]
     n = len(P)
     e_rms = np.empty(n)
     d_min = np.empty(n)
     shape = np.empty(n)
+    V_pot = np.empty(n)
     pairs = [(a, b) for a in range(P.shape[1]) for b in range(a + 1, P.shape[1])]
     for k in range(n):
         L = np.array([np.linalg.norm(P[k, a] - P[k, b]) for a, b in edges])
         e_rms[k] = float(np.sqrt(np.mean((L - dist) ** 2)))
         d_min[k] = min(np.linalg.norm(P[k, a] - P[k, b]) for a, b in pairs)
+        sq = L ** 2 - dist ** 2
+        V = 0.25 * kp * float((sq ** 2).sum())
+        for a in anchors:
+            V += 0.5 * anchor_kp * float((P[k, a] - targets[a]) @ (P[k, a] - targets[a]))
+        V_pot[k] = V
         A = P[k] - P[k].mean(0)
         B = targets - targets.mean(0)
         best = np.inf
@@ -399,7 +424,9 @@ def recompute_distance_edges(rec, P, scale=1.0):
             R = U @ np.diag([1.0, np.sign(np.linalg.det(U @ Vt))]) @ Vt
             best = min(best, float(np.sqrt(((Bm @ R - A) ** 2).sum(1).mean())))
         shape[k] = best
-    return e_rms, d_min, shape
+    K = (0.5 * np.sum(np.asarray(vel, float) ** 2, axis=(1, 2))
+         if vel is not None else np.zeros(n))
+    return e_rms, d_min, shape, V_pot, V_pot + K
 
 
 def breathing_reference(rec, t):

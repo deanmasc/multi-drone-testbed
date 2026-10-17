@@ -7,6 +7,9 @@
     "promise_settled": 0.15967446461714846,
     "promise_sim_settled": 0.16495546969031435,
     "cdist_max": 0.46421814835164826,
+    "cdist_max_sim": 0.18434829448710097,
+    "cdist_mean": 0.32166812637362635,
+    "cdist_mean_sim": 0.15779174467426607,
     "design_gap": 7.90167114295736,
     "drones": {
       "drone1": {
@@ -95,6 +98,9 @@
     "promise_settled": 0.12002722766234561,
     "promise_sim_settled": 0.12236947024165307,
     "cdist_max": 0.602025703488372,
+    "cdist_max_sim": 0.08773342869881877,
+    "cdist_mean": 0.3630042034883721,
+    "cdist_mean_sim": 0.08196643355923253,
     "design_gap": 5.738842122887021,
     "drones": {
       "drone1": {
@@ -183,6 +189,9 @@
     "promise_settled": 0.12830964997000807,
     "promise_sim_settled": 0.11205954857314286,
     "cdist_max": 0.6374977966101695,
+    "cdist_max_sim": 0.055866149243078554,
+    "cdist_mean": 0.4367674180790961,
+    "cdist_mean_sim": 0.05192870556947584,
     "design_gap": 88.8575706968715,
     "drones": {
       "drone1": {

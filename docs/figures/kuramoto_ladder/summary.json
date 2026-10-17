@@ -7,6 +7,11 @@
     "promise_settled": 0.9999969318181818,
     "promise_sim_settled": 1.0,
     "d_min": 0.8981698977272727,
+    "d_min_sim": 0.9193824788613209,
+    "angular_spacing_rms": 0.032552693181818186,
+    "angular_spacing_rms_sim": 3.1643060573114773e-16,
+    "radius_rms": 0.0056923352272727264,
+    "radius_rms_sim": 0.00010158530693763819,
     "design_gap": 14.367429881280497,
     "drones": {
       "drone1": {
@@ -95,6 +100,11 @@
     "promise_settled": 0.9908612944162436,
     "promise_sim_settled": 1.0,
     "d_min": 0.63232461928934,
+    "d_min_sim": 0.9195010556978648,
+    "angular_spacing_rms": 0.5339912538071067,
+    "angular_spacing_rms_sim": 5.128953440435405e-15,
+    "radius_rms": 0.07474487817258885,
+    "radius_rms_sim": 0.00018543179215075253,
     "design_gap": 27.767403436098885,
     "drones": {
       "drone1": {
@@ -183,6 +193,11 @@
     "promise_settled": 0.9962207315789472,
     "promise_sim_settled": 1.0,
     "d_min": 0.6614831894736842,
+    "d_min_sim": 0.9195638151793852,
+    "angular_spacing_rms": 0.47764296315789473,
+    "angular_spacing_rms_sim": 4.0528382579229196e-11,
+    "radius_rms": 0.1667576157894737,
+    "radius_rms_sim": 0.00022980945635290678,
     "design_gap": 66.21708690548184,
     "drones": {
       "drone1": {

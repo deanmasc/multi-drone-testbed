@@ -41,7 +41,8 @@ INK, MUTED, GRID, DESIGN = '#1f2328', '#5c6370', '#dfe2e6', '#9aa2ab'
 # on the pale end and greyscale safety throughout. The accent only has to
 # separate "flown" from the grey "design" line.
 FLOWN = {'trochoidal': '#c2571a', 'coverage': '#1f5fbd',
-         'flocking': '#157f58', 'distance': '#7a6414'}
+         'flocking': '#157f58', 'distance': '#7a6414',
+         'kuramoto': '#8c3b6d'}
 
 RC = {
     'font.size': 8, 'axes.labelsize': 8, 'axes.titlesize': 8,
@@ -168,9 +169,27 @@ def benchmarks(algo, stem, flight_keys=None, native_n=3):
     flight = [('dev_rms', 100, 'deviation\nfrom design (cm)'),
               ('ripple', 100, 'oscillation (cm)'),
               ('tilt_med', 1, 'median tilt (deg)')]
-    native = [(k, sc, lab) for k, sc, _u, lab, _f, _w, _x in spec['native']][:native_n]
+    # KuramotoMetrics writes columns() rather than all_columns(), so its
+    # records carry no z or tilt at all and the clean channel does not exist
+    # for that law. Drop a measure that is NaN everywhere rather than plot an
+    # empty panel.
+    flight = [f for f in flight
+              if np.isfinite([r.get(f[0], np.nan) for r in runs]).any()]
+    # SPEC's last field is a warning string, non-empty only where the metric
+    # is an artefact of the noisy channel (flocking's vel_spread reads the
+    # least-squares velocity, where the fit has already multiplied position
+    # noise by 11). A coloured bar that rises with the noise would read as
+    # "this metric sees the gap" when what it sees is the injection, so the
+    # metric is left out rather than plotted with a caveat.
+    native = [(k, sc, lab) for k, sc, _u, lab, _f, _w, warn in spec['native']
+              if not warn][:native_n]
 
-    fig, axs = plt.subplots(2, 3, figsize=(FULL, 2.9))
+    ncol = max(len(flight), len(native))
+    fig, axs = plt.subplots(2, ncol, figsize=(FULL, 2.9), squeeze=False)
+    for ax in axs.ravel()[len(flight):ncol]:
+        ax.axis('off')
+    for ax in axs[1][len(native):]:
+        ax.axis('off')
     for ax, (key, sc, ylab) in zip(axs[0], flight):
         vals = [r[key] * sc for r in runs]
         ax.bar(x, vals, width=0.68, color=ramp)
@@ -186,7 +205,14 @@ def benchmarks(algo, stem, flight_keys=None, native_n=3):
              'H': 'locational cost H',
              'edge_rms': 'edge-length\nerror (cm)',
              'shape_err': 'shape error after\nrigid fit (cm)',
-             'W_lyap': 'Lyapunov\nfunction W'}
+             'W_lyap': 'Lyapunov\nfunction W',
+             'order_R': 'order parameter R\n(1 = in phase)',
+             'radius_rms': 'radial error\noff the ring (cm)',
+             'angular_spacing_rms': 'angular spacing\nerror (rad)',
+             'lattice_err': 'lattice error (cm)',
+             'vel_spread': 'velocity spread (cm/s)',
+             'd_min': 'smallest pair\ngap (cm)',
+             'connected': 'graph connected\n(% of ticks)'}
     for ax, (key, sc, lab) in zip(axs[1], native):
         vals = [r['nat'][key] * sc for r in runs]
         span = 100 * (max(vals) - min(vals)) / np.mean(vals)
@@ -201,7 +227,7 @@ def benchmarks(algo, stem, flight_keys=None, native_n=3):
         ax.annotate(f'spans {span:.0f}% of its mean',
                     (0.5, 0.94), xycoords='axes fraction',
                     ha='center', va='top', fontsize=7, color=MUTED)
-    for ax in axs[1]:
+    for ax in axs[1][:len(native)]:
         ax.set_xlabel('noise (mm per axis)')
     save(fig, stem)
 
@@ -320,6 +346,253 @@ def trochoidal_rows(stem, rungs=('r2', 'r3', 'r4', 'r14'), secs=20.0):
     save(fig, stem)
 
 
+# ------------------------------------------------- the promised property
+PROMISE_LABEL = {'H': 'locational cost H',
+                 'lattice_err': 'lattice error (m)',
+                 'order_R': 'order parameter R',
+                 'edge_rms': 'edge-length error (m)'}
+
+
+def promise(algo, stem, height=1.85, colour=None, zero=True, t0=0.0):
+    """One panel per rung: the quantity the source paper states its result in.
+
+    The index version also draws the metric as the recorder logged it, on the
+    recorder's own clock, which on coverage is a sawtooth four times the size
+    of the real curve (PROJECT_AIM §15d). It is there to document the defect,
+    and it sets the y-axis for every panel, so the curve the figure is
+    actually about ends up in the bottom fifth. The paper figure drops it and
+    lets the axis belong to the result.
+    """
+    import plot_ladder as PL
+    spec = PL.LADDERS[algo]
+    runs = []
+    for label, rec, cfgname in spec['runs']:
+        r = PL.analyse(label, rec, cfgname, spec)
+        if r:
+            runs.append(r)
+    runs.sort(key=PL.ktau)
+    c = colour or FLOWN.get(algo, INK)
+
+    fig, axs = plt.subplots(1, len(runs), figsize=(FULL, height), sharey=True,
+                            squeeze=False)
+    # t0 drops the fan-out. The fleet starts wherever it was parked, so the
+    # first few seconds are a one-off transient three times the size of
+    # everything after it; left in, it owns the y-axis and flattens the part
+    # of the flight the figure is about.
+    lo, hi = np.inf, 0.0
+    for ax, r in zip(axs[0], runs):
+        if r['sim_promise'] is not None:
+            st = r['sim']['t'] - r['sim']['t'][0]
+            m = st >= t0
+            ax.plot(st[m], r['sim_promise'][m], color=DESIGN, lw=1.8,
+                    ls=(0, (4, 2)))
+            lo = min(lo, float(np.nanmin(r['sim_promise'][m])))
+            hi = max(hi, float(np.nanmax(r['sim_promise'][m])))
+        if r['promise'] is not None:
+            m = r['t'] >= t0
+            ax.plot(r['t'][m], r['promise'][m], color=c, lw=1.0)
+            lo = min(lo, float(np.nanmin(r['promise'][m])))
+            hi = max(hi, float(np.nanmax(r['promise'][m])))
+        ax.set_xlim(left=t0)
+        tag(ax, f"k·τ {PL.ktau(r):.2f}")
+    axs[0][0].set_ylabel(PROMISE_LABEL[spec['promise']])
+    pad = (hi - lo) * 0.18
+    axs[0][0].set_ylim(0 if zero else lo - pad, hi + pad * 2.2)
+    axs[0][0].legend(handles=[Line2D([], [], color=c, lw=1.0, label='hardware'),
+                              Line2D([], [], color=DESIGN, lw=1.8, ls=(0, (4, 2)),
+                                     label='simulation, same config')],
+                     loc='lower left', handlelength=1.8, borderaxespad=0.3)
+    fig.supxlabel('time since the algorithm started (s)', fontsize=8,
+                  color=INK)
+    save(fig, stem)
+    for r in runs:
+        q = r['promise']
+        if q is not None:
+            print(f"      k.tau {PL.ktau(r):.2f}  median {np.nanmedian(q):.3f}"
+                  f"  final {np.nanmean(q[-20:]):.3f}")
+
+
+# ------------------------------------------------ "the law converged" figures
+# Hoam's review asks for the result of each algorithm shown as a picture, not
+# only as a time series: how the agents come together into a group, how they
+# settle onto the Voronoi partition. These are two snapshots of the SAME quiet
+# flight -- the moment the algorithm engaged and a settled moment late in it --
+# with the structure the law is supposed to produce drawn over the top. The
+# metric panels (promise()) say it converged; these say what it converged to.
+
+def _voronoi(pos, half):
+    """Each agent's Voronoi cell, clipped to the square region Q.
+
+    Same construction the recorder scores H with (metrics_recorder._cells),
+    reusing the controller's own half-plane clip so the drawn partition cannot
+    drift out of step with the one the cost was computed on.
+    """
+    from drone_testbed.algorithms.coverage import _clip_halfplane
+    sq = np.array([[-half, -half], [half, -half], [half, half], [-half, half]],
+                  float)
+    cells = []
+    for k in range(len(pos)):
+        poly = sq.copy()
+        for j in range(len(pos)):
+            if j == k:
+                continue
+            d = pos[j] - pos[k]
+            if float(d @ d) < 1e-12:
+                continue
+            poly = _clip_halfplane(poly, 0.5 * (pos[k] + pos[j]), d)
+            if poly is None:
+                break
+        cells.append(poly)
+    return cells
+
+
+def _snap_axes(algo, height=2.25):
+    fig, axs = plt.subplots(1, 2, figsize=(COL * 2 / FULL * FULL, height),
+                            squeeze=False)
+    return fig, axs[0]
+
+
+def converge(algo, stem, rung=None, t_late=None, height=2.3, width=COL * 1.04):
+    """Two snapshots of one quiet flight: at engage, and settled."""
+    import plot_ladder as PL
+    import ladder_common as C
+    spec = PL.LADDERS[algo]
+    label, rec, cfgname = spec['runs'][0] if rung is None else \
+        next(r for r in spec['runs'] if r[0] == rung)
+    r = PL.analyse(label, rec, cfgname, spec)
+    c = FLOWN.get(algo, INK)
+    t = r['t']
+    k0 = 0                      # the moment the algorithm engaged
+    k1 = int(np.argmin(np.abs(t - (t_late if t_late is not None
+                                   else 0.85 * t[-1]))))
+    params = r['rec_obj']['params']
+
+    fig, axs = plt.subplots(1, 2, figsize=(width * 2, height), squeeze=False)
+    for ax, k in zip(axs[0], (k0, k1)):
+        pos = r['P'][k]
+        DRAW[algo](ax, pos, params, r, k)
+        ax.plot(pos[:, 0], pos[:, 1], 'o', ms=4.5, color=c, mec='white',
+                mew=0.8, zorder=5)
+        ax.set_aspect('equal')
+        ax.set_xlabel('x (m)')
+        ax.grid(False)
+    # The two panels must share limits or "they came together" is an artefact
+    # of the right-hand panel being drawn at a different scale. Coverage sets
+    # its own: there the region Q is the frame and it does not move.
+    if algo != 'coverage':
+        pts = np.vstack([r['P'][k0], r['P'][k1]])
+        if algo == 'kuramoto':
+            rad = float(params.get('radius', 0.65))
+            cen = np.asarray(params.get('center', [0.0, 0.0]), float)
+            pts = np.vstack([pts, cen + rad, cen - rad])
+        for ax in axs[0]:
+            _square_about(ax, pts, pad=0.25)
+    axs[0][0].set_ylabel('y (m)')
+    tag(axs[0][0], f't = {t[k0]:.0f} s')
+    tag(axs[0][1], f't = {t[k1]:.0f} s')
+    save(fig, stem)
+    print(f"      {algo} rung {label}: snapshots at {t[k0]:.0f} s and {t[k1]:.0f} s")
+
+
+def _draw_coverage(ax, pos, params, r, k):
+    """Voronoi partition, each cell's centroid, and the density hotspot.
+
+    The law's fixed points are the configurations where every agent sits on
+    its own cell's centroid, so the agent-to-centroid distance IS the measure
+    of convergence and both are drawn.
+    """
+    from drone_testbed.algorithms.coverage import Coverage
+    half = float(params.get('region_half_width', 1.5))
+    sq = np.array([[-half, -half], [half, -half], [half, half],
+                   [-half, -half]], float)
+    ax.plot(sq[:, 0], sq[:, 1], color=GRID, lw=1.0, zorder=0)
+    ax.plot([half, half, -half], [-half, half, half], color=GRID, lw=1.0, zorder=0)
+    algo = Coverage()
+    algo.configure(dict(params), [d for d in r['rec_obj']['ids']])
+    tt = r['t'][k]
+    for poly in _voronoi(pos, half):
+        if poly is None:
+            continue
+        ax.fill(poly[:, 0], poly[:, 1], facecolor='none', edgecolor=MUTED,
+                lw=0.7, zorder=2)
+    cen = algo._hotspot_at(tt)
+    sig = float(params.get('hotspot_sigma', 0.5))
+    th = np.linspace(0, 2 * np.pi, 80)
+    for m, a in ((1.0, 0.16), (2.0, 0.09)):
+        ax.fill(cen[0] + m * sig * np.cos(th), cen[1] + m * sig * np.sin(th),
+                color='#d0761a', alpha=a, lw=0, zorder=1)
+    for p, poly in zip(pos, _voronoi(pos, half)):
+        if poly is None:
+            continue
+        cc, _ = algo._cell_integral(poly, p, tt)
+        ax.plot([p[0], cc[0]], [p[1], cc[1]], color=INK, lw=0.9, zorder=4)
+        ax.plot(*cc, marker='x', ms=4, color=INK, mew=1.1, zorder=4)
+    ax.set_xlim(-half * 1.03, half * 1.03)
+    ax.set_ylim(-half * 1.03, half * 1.03)
+
+
+def _draw_flocking(ax, pos, params, r, k):
+    """The lattice: every pair inside the sense range joined, length labelled.
+
+    The edges are deliberately NOT coloured good/bad. Olfati-Saber's alpha
+    lattice does not settle at the nominal `spacing` d: the sigma-norm bump
+    puts the equilibrium at about 0.84 d (0.59 m for d = 0.70, as the config
+    itself notes), and the recorder's lattice_err is measured against d, so a
+    perfect flock still reads ~0.11 m of "error". Scoring the edges here
+    against d would repeat that mistake inside the picture. The lengths are
+    printed and the caption makes the comparison.
+    """
+    d0 = float(params.get('spacing', 0.6))
+    rs = float(params.get('sense_range', 1.2 * d0))
+    n = len(pos)
+    for a in range(n):
+        for b in range(a + 1, n):
+            L = float(np.linalg.norm(pos[a] - pos[b]))
+            if L > rs:
+                continue
+            ax.plot(*zip(pos[a], pos[b]), color=DESIGN, lw=1.6, zorder=2)
+            mid = 0.5 * (pos[a] + pos[b])
+            ax.text(*mid, f'{L:.2f}', fontsize=5.5, ha='center', va='center',
+                    color=MUTED, zorder=3,
+                    bbox=dict(fc='white', ec='none', alpha=0.8, pad=0.6))
+
+
+def _draw_kuramoto(ax, pos, params, r, k):
+    """The ring the agents are supposed to end up evenly spaced on."""
+    rad = float(params.get('radius', 0.65))
+    cen = np.asarray(params.get('center', params.get('formation_center',
+                                                     [0.0, 0.0])), float)
+    th = np.linspace(0, 2 * np.pi, 200)
+    ax.plot(cen[0] + rad * np.cos(th), cen[1] + rad * np.sin(th),
+            color=DESIGN, lw=1.8, zorder=2)
+    for p in pos:
+        ax.plot(*zip(cen, p), color=GRID, lw=0.7, zorder=1)
+
+
+def _draw_distance(ax, pos, params, r, k):
+    """The graph whose edge lengths are the entire specification."""
+    from drone_testbed.algorithms.distance_formation import formation_spec
+    _targets, edges, dist = formation_spec(params, r['rec_obj']['ids'])
+    for (a, b), d in zip(edges, dist):
+        L = float(np.linalg.norm(pos[a] - pos[b]))
+        bad = min(1.0, abs(L - d) / (0.3 * d))
+        ax.plot(*zip(pos[a], pos[b]),
+                color=DESIGN if bad < 0.3 else '#c2571a',
+                lw=1.5 if bad < 0.3 else 1.1, zorder=2)
+
+
+def _square_about(ax, pts, pad=0.3):
+    pts = np.asarray(pts, float).reshape(-1, 2)
+    cx, cy = pts[:, 0].mean(), pts[:, 1].mean()
+    lim = float(np.abs(pts - [cx, cy]).max()) + pad
+    ax.set_xlim(cx - lim, cx + lim)
+    ax.set_ylim(cy - lim, cy + lim)
+
+
+DRAW = {'coverage': _draw_coverage, 'flocking': _draw_flocking,
+        'kuramoto': _draw_kuramoto, 'distance': _draw_distance}
+
+
 def main():
     plt.rcParams.update(RC)
     import plot_noise_ladder_algos as NL
@@ -335,6 +608,15 @@ def main():
     design_rows('distance', 'fig_distance_design')
     design_rows('coverage', 'fig_coverage_design')
     design_rows('flocking', 'fig_flocking_design')
+    promise('coverage', 'fig_coverage_promise', t0=5.0, zero=False)
+    promise('flocking', 'fig_flocking_promise', t0=5.0, zero=False)
+    promise('kuramoto', 'fig_kuramoto_promise', t0=5.0, zero=False)
+    promise('distance', 'fig_distance_promise', t0=5.0, zero=False)
+    design_rows('kuramoto', 'fig_kuramoto_design')
+    benchmarks('flocking', 'fig_flocking_benchmarks')
+    benchmarks('kuramoto', 'fig_kuramoto_benchmarks', native_n=4)
+    for a in ('coverage', 'flocking', 'kuramoto', 'distance'):
+        converge(a, f'fig_{a}_converge')
 
 
 if __name__ == '__main__':

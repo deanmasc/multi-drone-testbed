@@ -122,10 +122,12 @@ def analyse(label, rec_name, cfgname, spec):
     if spec.get('recompute_promise'):
         # Every native metric in these records is NaN (see the LADDERS note).
         promise_logged = promise.copy() if promise is not None else None
-        e_rms, d_min_s, shape = C.recompute_distance_edges(rec, P)
+        e_rms, d_min_s, shape, V_pot, W = C.recompute_distance_edges(rec, P, vel=np.gradient(P, C.DT, axis=0))
         promise = e_rms
         rec['_d_min'] = d_min_s
-        rec['_shape'] = shape
+        rec['_shape_err'] = shape
+        rec['_V_pot'] = V_pot
+        rec['_W_lyap'] = W
     if spec['algo'] == 'Coverage' and promise is not None:
         # The recorder evaluates the coverage cost against the moving hotspot at
         # ITS OWN t, which starts when the recorder starts. The algorithm's
@@ -149,14 +151,32 @@ def analyse(label, rec_name, cfgname, spec):
         out['promise_settled'] = float(np.mean(pw[tail]))
         out['promise_sim_settled'] = (float(np.mean(sim_promise[int(0.8 * len(sim_promise)):]))
                                       if sim_promise is not None else float('nan'))
-    for extra in ('cdist_max', 'd_min', 'vel_spread', 'connected'):
+    # Settled value of every secondary property the law promises, so each
+    # algorithm can be reported against its own metrics and not only against
+    # the headline one. Same tail window as promise_settled.
+    for extra in ('cdist_max', 'cdist_mean', 'd_min', 'vel_spread', 'connected',
+                  'angular_spacing_rms', 'radius_rms', 'shape_err', 'W_lyap',
+                  'V_pot', 'edge_max', 'h_rose'):
         v = C.col(rec, extra)
-        if v is not None:
-            out[extra] = float(np.mean(v[sl][tail]))
+        if v is None or not np.isfinite(v[sl][tail]).any():
+            # The 6 Oct distance records NaN every native metric (see the
+            # LADDERS note); the recomputed series stand in for them.
+            v = rec.get(f'_{extra}')
+            if v is None:
+                continue
+        out[extra] = float(np.nanmean(v[sl][tail]))
+        sv = C.col(sim, extra)
+        if sv is not None and np.isfinite(sv).any():
+            out[f'{extra}_sim'] = float(np.nanmean(sv[int(0.8 * len(sv)):]))
     return out
 
 
 # ---- figures ---------------------------------------------------------------
+
+EXTRAS = ('cdist_max', 'cdist_mean', 'd_min', 'vel_spread', 'connected',
+          'angular_spacing_rms', 'radius_rms', 'shape_err', 'W_lyap',
+          'V_pot', 'edge_max', 'h_rose')
+
 
 def ktau(r):
     return float(np.mean([d['k_tau'] for d in r['drones'].values()]))
@@ -671,8 +691,8 @@ def main():
     summary = {r['label']: {k: v for k, v in r.items()
                             if k in ('rec', 'cfg', 'window', 'shared',
                                      'design_gap',
-                                     'promise_settled', 'promise_sim_settled',
-                                     'cdist_max', 'd_min', 'vel_spread')}
+                                     'promise_settled', 'promise_sim_settled')
+                            or k in EXTRAS or k[:-4] in EXTRAS}
                for r in runs}
     for r in runs:
         summary[r['label']]['drones'] = {

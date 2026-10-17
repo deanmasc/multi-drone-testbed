@@ -270,7 +270,17 @@ def analyse(label, rec, cfgname, clamp=CLAMP):
     ref = np.sqrt(np.mean(np.sum(Ps0[ks0] ** 2, axis=2), axis=1)).mean()
     tau = tg - t_start
     rate = np.polyfit(tau, np.log(size), 1)[0]
+    # The promised property. The law places two closed-loop eigenvalue pairs,
+    # and the trochoid IS those two frequencies: a joint two-mode fit over the
+    # whole fleet recovers them from the flown positions, and the same fit on
+    # the noiseless simulation of the same config gives what the design asked
+    # for. Period ratio and R^2 are the dimensionless versions -- the ratio is
+    # the shape of the trochoid, R^2 is how much of the flight a two-mode
+    # model explains at all. Unlike the other four laws, trochoidal has no
+    # reference trajectory, so this is the only thing it can be scored on.
     hw_modes = A.fit_modes(tg, Pg[..., 0] + 1j * Pg[..., 1])
+    sim_modes = A.fit_modes(ts[ks], Ps[ks, :, 0] + 1j * Ps[ks, :, 1])
+    short = (tg[-1] - tg[0]) < hw_modes[0][0]
 
     # acceleration the drones achieved, and the command they were sent
     V = np.gradient(Pg, DT, axis=0)
@@ -279,6 +289,17 @@ def analyse(label, rec, cfgname, clamp=CLAMP):
                to_edge=(t_end - t_start) if hit else None, live=t_end - t_start,
                fast_T=sim_fast, rate=rate, per_lap=math.exp(rate * sim_fast),
                mode_growth=hw_modes[1][1], mode_r2=hw_modes[2],
+               modes=dict(
+                   slow_T=hw_modes[0][0], fast_T=hw_modes[1][0],
+                   slow_T_sim=sim_modes[0][0], fast_T_sim=sim_modes[1][0],
+                   slow_growth=hw_modes[0][1], fast_growth=hw_modes[1][1],
+                   slow_growth_sim=sim_modes[0][1], fast_growth_sim=sim_modes[1][1],
+                   ratio=hw_modes[0][0] / hw_modes[1][0],
+                   ratio_sim=sim_modes[0][0] / sim_modes[1][0],
+                   r2=hw_modes[2], r2_sim=sim_modes[2],
+                   sense=hw_modes[1][2], sense_sim=sim_modes[1][2],
+                   window=float(tg[-1] - tg[0]),
+                   slow_mode_rough=bool(short)),
                tau=tau, size=size / ref, sim_tau=ts[ks], sim_size=sim_size / ref, sim_P=Ps[ks],
                start_tau=ts0, start_P=Ps0,
                tg=tg, Pg=Pg, real=real, drones={})
@@ -727,11 +748,33 @@ def main():
         summary[r['label']] = dict(
             rec=os.path.basename(r.get('rec', '')), cfg=r.get('cfg_name', ''),
             beta=float(r['beta']), window=float(r['live']),
+            # the promised property, per rung: see analyse()
+            modes={k: (float(v) if isinstance(v, (int, float, np.floating))
+                       and not isinstance(v, bool) else v)
+                   for k, v in r['modes'].items()},
+            # pattern radius as a fraction of the designed radius, and how
+            # fast it grows: 1.0 and 0 are what the design asks for.
+            size_settled=float(np.median(r['size'][r['tau'] >= 0.5 * r['tau'][-1]])),
+            size_sim=float(np.median(r['sim_size'][r['sim_tau'] >= 0.5 * r['sim_tau'][-1]])),
+            size_rate=float(r['rate']), size_per_fast_lap=float(r['per_lap']),
             drones={i: {k: (float(v[k]) if isinstance(v[k], (int, float, np.floating)) else v[k])
                         for k in ('sat', 'lag', 'xc_max', 'shake_T', 'shake_rms',
-                                  'u_med', 'a_med')
+                                  'u_med', 'a_med', 'tilt_design', 'speed',
+                                  'speed_design', 'sp_gap', 'sp_lag')
                         if k in v}
                     for i, v in r['drones'].items()})
+        for i, v in r['drones'].items():
+            # tilt_meas is VICON's own tilt channel, tilt_flown is implied
+            # from the achieved acceleration -- NOT the same quantity, so both
+            # are carried rather than merged. tilt_design is the 95th
+            # percentile the designed pattern needs.
+            d = summary[r['label']]['drones'][i]
+            d['tilt_meas_med'] = (float(np.nanmedian(v['tilt_meas']))
+                                  if v['tilt_meas'] is not None else None)
+            d['tilt_meas_p95'] = (float(np.nanpercentile(v['tilt_meas'], 95))
+                                  if v['tilt_meas'] is not None else None)
+            d['tilt_flown_med'] = float(np.median(v['tilt_flown']))
+            d['tilt_flown_p95'] = float(np.percentile(v['tilt_flown'], 95))
         for i in summary[r['label']]['drones']:
             summary[r['label']]['drones'][i]['real'] = True
             summary[r['label']]['drones'][i]['k'] = float(r['beta'])

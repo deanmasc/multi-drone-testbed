@@ -176,7 +176,34 @@ def analyse(label, rec, cfgname):
 
     thirds = [float(np.sqrt(np.mean(dev[i * len(dev) // 3:(i + 1) * len(dev) // 3] ** 2)))
               for i in range(3)]
+
+    # The promised property, same as the gain ladder: the law places two
+    # closed-loop eigenvalue pairs and the trochoid is those two frequencies.
+    # A joint two-mode fit over the whole fleet reads them off the flown
+    # positions; the same fit on Dg -- the noiseless design from the real
+    # start -- is what was asked for. Trochoidal logs no promise column, so
+    # this is the only quantity it can be scored against.
+    hw_modes = A.fit_modes(tg, Pg[..., 0] + 1j * Pg[..., 1])
+    des_modes = A.fit_modes(tg, Dg[..., 0] + 1j * Dg[..., 1])
+    # Pattern radius: fleet RMS distance from the pattern centre with the
+    # 0.6-1.5 Hz ripple filtered out, hardware over design. 1.0 is the
+    # designed size.
+    fleet_r = lambda Q: float(np.median(np.sqrt(np.mean(np.sum(Q ** 2, axis=2), axis=1))))
+    modes = dict(
+        slow_T=hw_modes[0][0], fast_T=hw_modes[1][0],
+        slow_T_sim=des_modes[0][0], fast_T_sim=des_modes[1][0],
+        slow_growth=hw_modes[0][1], fast_growth=hw_modes[1][1],
+        slow_growth_sim=des_modes[0][1], fast_growth_sim=des_modes[1][1],
+        ratio=hw_modes[0][0] / hw_modes[1][0],
+        ratio_sim=des_modes[0][0] / des_modes[1][0],
+        r2=hw_modes[2], r2_sim=des_modes[2],
+        sense=hw_modes[1][2], sense_sim=des_modes[1][2],
+        window=float(tg[-1] - tg[0]),
+        slow_mode_rough=bool((tg[-1] - tg[0]) < hw_modes[0][0]))
     return dict(
+        modes=modes,
+        size_settled=fleet_r(Pg) / fleet_r(Dg), size_hw_m=fleet_r(Pg),
+        size_design_m=fleet_r(Dg),
         label=label, noise=noise, rec=rec, cfg_name=cfgname, beta=be, clamp=clamp,
         reals=reals, n_real=len(reals),
         per_real={i: dict(dev=v, dev_rms=float(np.sqrt(np.mean(v ** 2))),
@@ -415,7 +442,9 @@ def main():
                             ('noise', 'beta', 'dev_rms', 'dev_med', 'dev_p95',
                              'dev_max', 'virt_rms', 'ripple', 'speed', 'speed_p95',
                              'tilt_p95', 'tilt_max', 'clip', 'u_med', 'radius_max',
-                             'design_r', 'thirds', 'n_real', 'sep_min')}
+                             'design_r', 'thirds', 'n_real', 'sep_min',
+                             'modes', 'size_settled', 'size_hw_m',
+                             'size_design_m')}
                for r in runs}
     for r in runs:
         summary[r['label']]['rec'] = os.path.basename(r['rec'])

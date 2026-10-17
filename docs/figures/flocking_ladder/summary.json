@@ -7,7 +7,11 @@
     "promise_settled": 0.10826357482993197,
     "promise_sim_settled": 0.10838143545138024,
     "d_min": 0.568205306122449,
+    "d_min_sim": 0.5826972511401114,
     "vel_spread": 0.008290312925170068,
+    "vel_spread_sim": 0.0006934453640777856,
+    "connected": 1.0,
+    "connected_sim": 1.0,
     "design_gap": 6.169142687214952,
     "drones": {
       "drone1": {
@@ -96,7 +100,11 @@
     "promise_settled": 0.10135967782426776,
     "promise_sim_settled": 0.10258102347400515,
     "d_min": 0.5761904602510461,
+    "d_min_sim": 0.5853295185601389,
     "vel_spread": 0.02914437238493724,
+    "vel_spread_sim": 0.00014288455885677037,
+    "connected": 0.9456066945606695,
+    "connected_sim": 1.0,
     "design_gap": 11.578100712150349,
     "drones": {
       "drone1": {
@@ -185,7 +193,11 @@
     "promise_settled": 0.14390595397489542,
     "promise_sim_settled": 0.10219001024513544,
     "d_min": 0.45973140167364024,
+    "d_min_sim": 0.5857480952352517,
     "vel_spread": 0.07522215481171547,
+    "vel_spread_sim": 6.057975100966413e-09,
+    "connected": 1.0,
+    "connected_sim": 1.0,
     "design_gap": 21.627932193864506,
     "drones": {
       "drone1": {
