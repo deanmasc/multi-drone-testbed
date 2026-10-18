@@ -593,6 +593,104 @@ DRAW = {'coverage': _draw_coverage, 'flocking': _draw_flocking,
         'kuramoto': _draw_kuramoto, 'distance': _draw_distance}
 
 
+# --------------------------------------------------- all five laws, one axes
+# The supervisor asked for the five control laws compared directly rather than
+# one subsection at a time. Deviation from the designed trajectory is the only
+# quantity all five record, so it is the only thing they CAN share an axis on
+# -- each law's own promise metric is in different units and measures a
+# different property, which is the point of the per-law figures.
+
+NOISE_MARK = {'trochoidal': 'o', 'coverage': 's', 'flocking': '^',
+              'kuramoto': 'D', 'distance': 'v'}
+NOISE_NAME = {'trochoidal': 'trochoidal', 'coverage': 'coverage',
+              'flocking': 'flocking', 'kuramoto': 'Kuramoto',
+              'distance': 'distance form.'}
+
+
+def _noise_devs():
+    """RMS deviation per rung for all five noise ladders, in cm.
+
+    Four of them live in plot_noise_ladder_algos; trochoidal's 23 Sep ladder
+    predates that module and lives in plot_noise_ladder, and it is the one
+    without a sensor-only null -- the null model was written after it was
+    flown. Nulls are collected where they exist but are not drawn: with one
+    law missing its own, a null line would be present for four series and
+    absent for the fifth, which reads as a difference between the laws rather
+    than a difference between the ladders.
+    """
+    import plot_noise_ladder_algos as NL
+    out = {}
+    for algo in ('coverage', 'flocking', 'kuramoto', 'distance'):
+        spec = NL.SPEC[algo]
+        runs = []
+        for label, rec, cfgname in spec['runs']:
+            path = os.path.join(NL.LOGS, rec)
+            if os.path.isfile(path):
+                runs.append(NL.analyse(spec, label, path, cfgname))
+        NL.add_nulls(runs)
+        out[algo] = dict(
+            mm=np.array([float(r['label']) for r in runs]),
+            dev=np.array([r['dev_rms'] * 100 for r in runs]),
+            null=np.array([r['dev_rms_null'] * 100 for r in runs]))
+    import json
+    with open(os.path.join(ROOT, 'docs', 'figures', 'noise_ladder',
+                           'summary.json')) as fh:
+        tro = json.load(fh)
+    out['trochoidal'] = dict(
+        mm=np.array([float(k) for k in tro]),
+        dev=np.array([v['dev_rms'] * 100 for v in tro.values()]),
+        null=None)
+    return out
+
+
+def cross_noise(stem, height=2.2):
+    """Deviation against injected noise, all five laws, absolute and scaled.
+
+    Left panel is centimetres, which is what the aircraft actually did. Right
+    panel divides each law by its own 0 mm flight, because the five baselines
+    differ by a factor of nine (1.4 cm for the distance formation against
+    13.4 cm for Kuramoto) and on the absolute axis that offset buries the
+    slopes, which is the quantity being compared.
+    """
+    d = _noise_devs()
+    order = ['trochoidal', 'coverage', 'distance', 'flocking', 'kuramoto']
+    # Rung position, not millimetres. The ladder is 0/2/5/10 (/20), which on a
+    # linear axis puts four of the five points in the first third and leaves
+    # coverage's extra rung as a long empty run. Every other figure in this
+    # set already places the rungs evenly and labels them with the level, so
+    # this matches them.
+    rungs = [0.0, 2.0, 5.0, 10.0, 20.0]
+    xof = {m: k for k, m in enumerate(rungs)}
+    fig, axs = plt.subplots(1, 2, figsize=(FULL, height), squeeze=False)
+    for ax, norm in zip(axs[0], (False, True)):
+        for algo in order:
+            v = d[algo]
+            y = v['dev'] / v['dev'][0] if norm else v['dev']
+            x = [xof[m] for m in v['mm']]
+            c = FLOWN[algo]
+            ax.plot(x, y, color=c, lw=1.3, marker=NOISE_MARK[algo],
+                    ms=3.6, mec='white', mew=0.6, zorder=3)
+            # Direct labels rather than a legend box: five series is one more
+            # than a legend reads cleanly at this size, and it keeps identity
+            # off colour alone.
+            ax.annotate(NOISE_NAME[algo], (x[-1], y[-1]),
+                        xytext=(4, 0), textcoords='offset points',
+                        va='center', fontsize=6.5, color=c)
+        ax.set_xlabel('injected position noise (mm per axis)')
+        ax.set_xticks(range(len(rungs)), [f'{m:g}' for m in rungs])
+        ax.set_xlim(-0.2, len(rungs) - 0.25)
+        ax.set_ylim(bottom=0)
+    axs[0][0].set_ylabel('RMS deviation from\nthe design (cm)')
+    axs[0][1].set_ylabel('deviation, relative to\nthe same law at 0 mm')
+    axs[0][1].axhline(1.0, color=GRID, lw=0.8, zorder=1)
+    save(fig, stem)
+    for algo in order:
+        v = d[algo]
+        rel = v['dev'] / v['dev'][0]
+        print(f"      {algo:11} " + '  '.join(f'{x:5.1f}' for x in v['dev'])
+              + '   x' + '  x'.join(f'{x:.2f}' for x in rel))
+
+
 def main():
     plt.rcParams.update(RC)
     import plot_noise_ladder_algos as NL
@@ -617,6 +715,7 @@ def main():
     benchmarks('kuramoto', 'fig_kuramoto_benchmarks', native_n=4)
     for a in ('coverage', 'flocking', 'kuramoto', 'distance'):
         converge(a, f'fig_{a}_converge')
+    cross_noise('fig_cross_noise')
 
 
 if __name__ == '__main__':

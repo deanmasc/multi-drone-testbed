@@ -217,6 +217,24 @@ FIGURES = [
      'Deviation from the designed octahedron against injected position noise, '
      'flown at k\u00b7\u03c4 0.39 where the gain ladder is quiet. Median deviation runs '
      '1.2, 2.4, 2.7 and 3.6 cm.'),
+    # ------------------------------------------------------- F. all five laws
+    ('fig_cross_noise', FULL,
+     'All five control laws under the same lever. Deviation from the designed '
+     'trajectory is the only quantity every law records, so it is the only '
+     'axis the five can share \u2014 each law\u2019s own promise metric is in '
+     'different units and measures a different property. Left, in '
+     'centimetres: the baselines differ by a factor of nine, from 1.4 cm for '
+     'the distance formation to 13.4 cm for Kuramoto, and that offset buries '
+     'the slopes. Right, each law divided by its own 0 mm flight. Over 0 to '
+     '10 mm the trochoidal law rises 5.7\u00d7, the distance formation 3.0\u00d7, '
+     'coverage 2.9\u00d7 and flocking 2.1\u00d7, while Kuramoto ends at 0.99\u00d7 \u2014 flat. '
+     'Kuramoto\u2019s flatness is not robustness: its 10 mm flight sits at 0.99 '
+     'times its own sensor-only null, so the whole ladder is inside the gap '
+     'the law already had. Coverage was the only law taken to 20 mm; the '
+     'rungs are placed evenly rather than to scale. No null is drawn: the '
+     'trochoidal ladder was flown before the null model existed, and a '
+     'reference line present for four series and missing for the fifth would '
+     'read as a difference between the laws rather than between the ladders.'),
 ]
 
 EXTRA_CSS = """
