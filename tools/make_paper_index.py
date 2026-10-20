@@ -49,7 +49,7 @@ FIGURES = [
     # ------------------------------------------------------------ B. coverage
     ('fig_coverage_converge', FULL,
      'What the coverage law converged to, on the quiet rung (k\u00b7\u03c4 0.34). Left '
-     'is the moment the algorithm engaged, right is 77 s later; both panels '
+     'is the moment the algorithm engaged, right is 69 s later; both panels '
      'show the region Q, the Voronoi partition built from the flown '
      'positions, each agent (dot) joined to its own cell\u2019s centroid '
      '(cross), and the Gaussian density at one and two sigma. The law\u2019s '
@@ -66,10 +66,11 @@ FIGURES = [
      'the slow undulation in both traces is one orbit of that hotspot. The '
      'first 5 s are cut: the fleet starts from its parked marks and that '
      'one-off fan-out is three times the size of everything after it. After '
-     'the first 20 s the hardware median reads 0.147, 0.117 and 0.124 against '
+     'the first 20 s the hardware median reads 0.147, 0.116 and 0.123 against '
      '0.164, 0.122 and 0.112 in simulation \u2014 within 0.017 on every rung. At '
      'k\u00b7\u03c4 1.01 the aircraft is visibly oscillating (next figure) and a fast '
-     'ripple appears on H, but its median moves by 0.007. The metric the '
+     'ripple appears on H, but its median moves by 0.007. Each window ends '
+     'where the aircraft begins its descent. The metric the '
      'theorem is written in barely registers a ladder that changes how the '
      'drones fly by a factor of five.'),
     ('fig_coverage_design', FULL,
@@ -96,7 +97,7 @@ FIGURES = [
      'What the flocking law converged to, on the quiet rung (k\u00b7\u03c4 0.42). Left '
      'is the moment the algorithm engaged: the four agents sit on their '
      'parked marks, every pair further apart than the 0.84 m sense range, so '
-     'no edge exists and there is no group. Right is 125 s later: a connected '
+     'no edge exists and there is no group. Right is 120 s later: a connected '
      'lattice at 0.59 m spacing that has also travelled to follow the moving '
      '\u03b3-agent. Both panels are drawn at the same scale. The edges are not '
      'scored good or bad here, because the \u03b1-lattice does not settle at the '
@@ -105,18 +106,31 @@ FIGURES = [
     ('fig_flocking_promise', FULL,
      'Lattice error \u2014 the RMS gap between every in-range pair and the nominal '
      'spacing \u2014 across the three time-rescalings, hardware against the same '
-     'configuration in simulation. On the quiet rung the two agree to 0.1 mm '
-     '(0.1083 m against 0.1084 m). The residual 10.8 cm is not a hardware '
-     'error: the recorder scores against the nominal d = 0.70 m while the '
-     '\u03b1-lattice equilibrium is at about 0.59 m, and the simulation carries '
-     'the same offset. At k\u00b7\u03c4 1.25 the trace is visibly noisier throughout '
-     'and breaks away near the end of the flight.'),
+     'configuration in simulation. It settles at 0.1023, 0.1022 and 0.1049 m '
+     'against 0.1084, 0.1026 and 0.1022 in simulation: flat across the whole '
+     'ladder and within 0.6% of simulation on every rung, while the same '
+     'flights move the aircraft from 5.3 to 17.9 cm off its designed '
+     'position. The first 10 s are cut: the lattice is still forming there, so '
+     'the error is averaged over fewer pairs and reads about a fifth of its '
+     'settled value. The residual 10 cm is not a hardware error \u2014 the recorder '
+     'scores against the nominal d = 0.70 m while the \u03b1-lattice equilibrium '
+     'is at about 0.59 m, and the simulation carries the same offset. Each '
+     'window ends where the aircraft begins its descent; left in, the landing '
+     'adds a spike that reads as the law breaking down.'),
     ('fig_flocking_design', FULL,
-     'Designed against flown position for Olfati-Saber flocking at three '
-     'time-rescalings, 20 s from the middle of each flight. The rescaling '
-     'leaves the lattice and the path unchanged and moves only the rate at '
-     'which the law acts, so k\u00b7\u03c4 is the only quantity that differs between '
-     'rows.'),
+     'Flown path against the design for Olfati-Saber flocking at three time '
+     'rescalings. The rescaling leaves the lattice and the \u03b3-agent circle '
+     'unchanged and moves only the rate at which the law acts, so each panel '
+     'is the same arc of the same path and k\u00b7\u03c4 is the only quantity that '
+     'differs. The windows are matched on arc rather than on time \u2014 3 rad of '
+     'the reference circle, which at these rescalings takes 60, 40 and 20 s \u2014 '
+     'because matching on time would have the slow rung draw a short stub and '
+     'the fast one most of a lap. Grey is the same configuration in the '
+     'noiseless simulator, started from where the drones actually were at '
+     'engage. At k\u00b7\u03c4 0.42 and 0.62 the aircraft tracks the circle, 7 and '
+     '9 cm off. At 1.25 a standing ripple appears on top of it \u2014 3.0 cm RMS '
+     'in the 0.6\u20131.5 Hz band at a 1.16 s period, against 0.5 cm at the quiet '
+     'rung \u2014 and the median miss trebles to 18 cm.'),
     ('fig_flocking_benchmarks', FULL,
      'Flocking under injected position noise. Top row: how the aircraft flew '
      '\u2014 deviation 5.2 \u2192 11.1 cm, oscillation 0.47 \u2192 1.24 cm, median tilt '
@@ -147,21 +161,24 @@ FIGURES = [
      'did anything.'),
     ('fig_kuramoto_promise', FULL,
      'The order parameter R, the quantity the Kuramoto result is stated in, '
-     'across the damping ladder. R reads 1.0000, 0.9909 and 0.9962 settled, '
-     'against 1.0000 in simulation on every rung \u2014 within 0.3% of the ideal '
-     'across a ladder that puts the aircraft into 21 cm of sustained '
-     'oscillation at 29\u00b0 of bank with the acceleration clamp active on 80% of '
-     'ticks. The excursion at the end of the middle '
-     'panel is the end of the flight, not the law. A phase-only metric cannot '
-     'see a position oscillation, which is the sharpest case of metric '
-     'blindness in the set.'),
+     'across the damping ladder. R reads 1.0000, 0.9987 and 0.9965 settled, '
+     'against 1.0000 in simulation on every rung \u2014 within 0.4% of the ideal '
+     'across a ladder that puts the aircraft into 21.5 cm of sustained '
+     'oscillation at 29\u00b0 of bank with the acceleration clamp active on 83% of '
+     'ticks. Kuramoto records carry no altitude channel, so each window here '
+     'ends where the real aircraft stops moving while the simulated agents '
+     'carry on; left in, the frozen agent drags R down and the drop reads as '
+     'the law failing. A phase-only metric cannot see a position '
+     'oscillation, which is the sharpest case of metric blindness in the '
+     'set.'),
     ('fig_kuramoto_design', FULL,
      'Designed against flown position for the Kuramoto ring formation at '
      'three damping settings, 20 s from the middle of each flight. Only the '
      'own-velocity gain differs between rows; the ring the law asks for is '
-     'identical. The smallest pair gap falls from 0.90 m to 0.63 m across '
-     'these rungs and the angular spacing error from 0.033 to 0.53 rad \u2014 the '
-     'ring deforms badly \u2014 while R stays within 0.3% of 1 throughout.'),
+     'identical. Across these rungs the smallest pair gap falls from 0.90 to '
+     '0.68 m, the angular spacing error rises from 0.033 to 0.45 rad and the '
+     'radial error off the ring from 0.6 to 14.0 cm \u2014 the ring deforms '
+     'steadily \u2014 while R stays within 0.4% of 1 throughout.'),
     ('fig_kuramoto_benchmarks', FULL,
      'Kuramoto under injected position noise. Top row: how the aircraft flew. '
      'Tilt is absent because the Kuramoto recorder writes its own metric '

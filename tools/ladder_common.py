@@ -130,6 +130,49 @@ def window(rec, P):
     if t_start is None:
         t_start = float(t[0])
     k0 = int(np.searchsorted(t, t_start + 2.0))
+
+    # The flight ends when the aircraft comes down, not when the record stops.
+    # Every record's last few seconds are the descent, and during it the real
+    # drone leaves the formation while the virtual agents keep flying it, so
+    # any metric averaged over the tail of the window is partly a landing. On
+    # flocking's loudest rung that put 4 cm of landing into a 10 cm lattice
+    # error. Cut at the first row after engage where the highest drone has
+    # lost a fifth of its cruise altitude.
+    #
+    # z comes from /poses and is upstream of the noise injection, so this cut
+    # is made on a clean channel even on a noise rung. Kuramoto records carry
+    # no z at all -- KuramotoMetrics writes columns() rather than
+    # all_columns() -- so for that law no cut is possible and the window still
+    # runs to the last live row.
+    zc = [c for c in rec['cols'] if c.startswith('z_')]
+    if zc and last > k0 + 10:
+        Z = np.stack([rec['D'][:, rec['cols'].index(c)] for c in zc], 1)
+        zz = np.nanmax(Z, axis=1)
+        cruise = float(np.nanmedian(zz[k0:(k0 + last) // 2 + 1]))
+        if np.isfinite(cruise) and cruise > 0.2:
+            down = np.nonzero(zz[k0:last + 1] < 0.8 * cruise)[0]
+            if len(down):
+                last = max(k0 + 10, k0 + int(down[0]) - 1)
+    # Kuramoto has no z, so the altitude cut above cannot fire for it. Fall
+    # back to the real aircraft's own motion: if the law had it flying and it
+    # stops dead while the simulated agents carry on, the flight is over --
+    # on the k*tau 0.81 Kuramoto rung the real drone's speed collapses from
+    # 0.54 to 0.00 m/s and its position freezes, after which the order
+    # parameter falls only because one agent's phase has stopped advancing.
+    #
+    # The test is relative to what the law was actually doing, and is skipped
+    # when the median speed is near zero, so a station-keeping law (the
+    # distance formation's anchored octahedron) is never cut for holding
+    # still -- which is the behaviour it is supposed to show.
+    if real and last > k0 + 40:
+        V = np.linalg.norm(np.gradient(P[k0:last + 1], DT, axis=0), axis=2)
+        v = np.nanmax(V[:, real], axis=1)
+        cruise = float(np.nanmedian(v[:int(0.8 * len(v))]))
+        if np.isfinite(cruise) and cruise > 0.05:
+            slow = np.convolve((v < 0.1 * cruise).astype(int), np.ones(20), 'valid')
+            stop = np.nonzero((slow >= 20) & (np.arange(len(slow)) > 0.6 * len(v)))[0]
+            if len(stop):
+                last = max(k0 + 10, k0 + int(stop[0]) - 1)
     return dict(real=real, virt=virt, grounded=grounded, t_start=t_start,
                 k0=k0, k1=last, sl=slice(k0, last + 1))
 

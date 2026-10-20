@@ -298,6 +298,70 @@ def design_rows(algo, stem, rungs=None, span=20.0, height=None, colour=None):
     save(fig, stem)
 
 
+def design_paths(algo, stem, rungs=None, arc=3.0, span=20.0, height=2.15,
+                 colour=None):
+    """Flown path against the design, one panel per rung, in a row.
+
+    The paired x-over-time panels of design_rows() are dropped here. For a
+    law whose reference is itself travelling, the trajectory swings over more
+    than a metre inside the window, and against that the 1.1 s ripple is a
+    line thickness -- the panel costs two thirds of the figure's height and
+    shows the oscillation less clearly than the path does.
+
+    Where the ladder is a time rescale, each rung gets a window covering the
+    same `arc` of the reference circle rather than the same number of
+    seconds, so all three panels draw the same piece of the same path and the
+    only difference between them is how well it was flown. Without a moving
+    reference the window is `span` seconds for every rung.
+    """
+    import plot_ladder as PL
+    spec = PL.LADDERS[algo]
+    runs = []
+    for label, rec, cfgname in spec['runs']:
+        if rungs and label not in rungs:
+            continue
+        r = PL.analyse(label, rec, cfgname, spec)
+        if r:
+            runs.append(r)
+    runs.sort(key=PL.ktau)
+    c = colour or FLOWN.get(algo, INK)
+
+    pts = np.concatenate([r['P'][:, r['real'][0] if r['real'] else 0] for r in runs])
+    cx, cy = pts[:, 0].mean(), pts[:, 1].mean()
+    lim = float(np.abs(pts - [cx, cy]).max()) * 1.12 + 0.05
+
+    fig, axs = plt.subplots(1, len(runs), figsize=(FULL, height), squeeze=False)
+    for ax, r in zip(axs[0], runs):
+        j = r['real'][0] if r['real'] else 0
+        w = float(r['rec_obj']['params'].get('gamma_speed') or 0.0)
+        secs = arc / w if w > 0 else span
+        mid = 0.5 * r['t'][-1]
+        t0, t1 = max(r['t'][0], mid - secs / 2), min(r['t'][-1], mid + secs / 2)
+        m = (r['t'] >= t0) & (r['t'] <= t1)
+        st = r['sim']['t'] - r['sim']['t'][0]
+        want = np.stack([np.interp(r['t'][m] + 2.0, st, r['sim']['P'][:, j, ax_])
+                         for ax_ in (0, 1)], 1)
+        act = r['P'][m, j]
+        ax.plot(want[:, 0], want[:, 1], color=DESIGN, lw=3.0,
+                solid_capstyle='round')
+        ax.plot(act[:, 0], act[:, 1], color=c, lw=1.0, alpha=0.95)
+        ax.set_aspect('equal')
+        ax.set_xlim(cx - lim, cx + lim); ax.set_ylim(cy - lim, cy + lim)
+        ax.set_xlabel('x (m)')
+        gap = np.hypot(*(act - want).T) * 100
+        tag(ax, f"k·τ {PL.ktau(r):.2f}")
+        ax.text(0.97, 0.03, f"median {np.median(gap):.0f} cm off\n{t1 - t0:.0f} s shown",
+                transform=ax.transAxes, ha='right', va='bottom', fontsize=6.5,
+                color=MUTED, linespacing=1.3)
+    for ax in axs[0][1:]:
+        ax.set_yticklabels([])
+    axs[0][0].set_ylabel('y (m)')
+    fig.legend(handles=[Line2D([], [], color=DESIGN, lw=3.0, label='design'),
+                        Line2D([], [], color=c, lw=1.0, label='flown')],
+               loc='outside lower right', ncol=2, handlelength=1.5)
+    save(fig, stem)
+
+
 def trochoidal_rows(stem, rungs=('r2', 'r3', 'r4', 'r14'), secs=20.0):
     """The trochoidal equivalent, which has its own analysis module."""
     import plot_trochoidal_ladder as T
@@ -353,7 +417,8 @@ PROMISE_LABEL = {'H': 'locational cost H',
                  'edge_rms': 'edge-length error (m)'}
 
 
-def promise(algo, stem, height=1.85, colour=None, zero=True, t0=0.0):
+def promise(algo, stem, height=1.85, colour=None, zero=True, t0=0.0,
+            legend_loc='lower left'):
     """One panel per rung: the quantity the source paper states its result in.
 
     The index version also draws the metric as the recorder logged it, on the
@@ -401,7 +466,7 @@ def promise(algo, stem, height=1.85, colour=None, zero=True, t0=0.0):
     axs[0][0].legend(handles=[Line2D([], [], color=c, lw=1.0, label='hardware'),
                               Line2D([], [], color=DESIGN, lw=1.8, ls=(0, (4, 2)),
                                      label='simulation, same config')],
-                     loc='lower left', handlelength=1.8, borderaxespad=0.3)
+                     loc=legend_loc, handlelength=1.8, borderaxespad=0.3)
     fig.supxlabel('time since the algorithm started (s)', fontsize=8,
                   color=INK)
     save(fig, stem)
@@ -705,11 +770,18 @@ def main():
     noise_box('distance', 'fig_noise_distance_box', NL.RAMP4)
     design_rows('distance', 'fig_distance_design')
     design_rows('coverage', 'fig_coverage_design')
-    design_rows('flocking', 'fig_flocking_design')
+    design_paths('flocking', 'fig_flocking_design')
     promise('coverage', 'fig_coverage_promise', t0=5.0, zero=False)
-    promise('flocking', 'fig_flocking_promise', t0=5.0, zero=False)
+    # 10 s, not 5: the lattice is still forming over the first few seconds
+    # (n_edges climbs 0 -> 5), so the RMS is taken over fewer pairs and
+    # reads low, and the simulation's own start-up runs down near zero.
+    # Both sit at a fifth of the settled value and own the axis.
+    promise('flocking', 'fig_flocking_promise', t0=10.0, zero=False)
     promise('kuramoto', 'fig_kuramoto_promise', t0=5.0, zero=False)
-    promise('distance', 'fig_distance_promise', t0=5.0, zero=False)
+    # The distance formation settles to near zero, so the usual lower-left
+    # legend lands on top of the quiet rung's trace.
+    promise('distance', 'fig_distance_promise', t0=5.0, zero=False,
+            legend_loc='upper right')
     design_rows('kuramoto', 'fig_kuramoto_design')
     benchmarks('flocking', 'fig_flocking_benchmarks')
     benchmarks('kuramoto', 'fig_kuramoto_benchmarks', native_n=4)
